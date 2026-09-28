@@ -30,6 +30,10 @@ targets:
         CFBundleVersion: "1"
         UILaunchScreen: {}
         UIRequiresFullScreen: true
+        # Keeps the process (and so the external scene) alive when DualScreen is
+        # not frontmost. See Sources/Model/KeepAlive.swift.
+        UIBackgroundModes:
+          - audio
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationPortraitUpsideDown
