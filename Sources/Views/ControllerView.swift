@@ -125,6 +125,7 @@ private struct WorkspacePreview: View {
                         // scaleEffect does not change the layout size, so pin the
                         // oversized box to the top-left instead of letting it centre.
                         .frame(width: size.width, height: size.height, alignment: .topLeading)
+                        .environment(\.isMirrorPreview, ws.isExternalAttached)
                         .allowsHitTesting(false)
 
                     // Hit layer: topmost window under the tap gets focus.
@@ -235,6 +236,7 @@ private struct InputPanel: View {
             VStack(alignment: .leading, spacing: 8) {
                 SectionLabel(window.kind.title)
                 switch window.kind {
+                case .web:        WebControls(window: window)
                 case .notes:      NotesInput(id: window.id, text: window.text)
                 case .calculator: CalculatorKeypad(id: window.id, expression: window.text)
                 case .pdf:        PDFControls(window: window)

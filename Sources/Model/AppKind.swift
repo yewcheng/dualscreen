@@ -2,10 +2,10 @@ import SwiftUI
 
 /// The applications that can live in a DualScreen window.
 ///
-/// Deliberately absent: a web browser. Third-party iPadOS apps must use
-/// WKWebView, which does not render reliably into a non-interactive external
-/// scene and cannot be driven without real hit-testing on that screen.
+/// `web` is a WKWebView rendered on the monitor and driven entirely from the
+/// iPad — see WebApp.swift for why it cannot be touched directly.
 enum AppKind: String, Codable, CaseIterable, Identifiable {
+    case web
     case notes
     case calculator
     case pdf
@@ -17,6 +17,7 @@ enum AppKind: String, Codable, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .web: return "Web"
         case .notes: return "Notes"
         case .calculator: return "Calculator"
         case .pdf: return "PDF"
@@ -28,6 +29,7 @@ enum AppKind: String, Codable, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
+        case .web: return "globe"
         case .notes: return "note.text"
         case .calculator: return "function"
         case .pdf: return "doc.richtext"
@@ -39,6 +41,7 @@ enum AppKind: String, Codable, CaseIterable, Identifiable {
 
     var accent: Color {
         switch self {
+        case .web: return Color(red: 0.45, green: 0.82, blue: 0.78)
         case .notes: return Color(red: 0.98, green: 0.76, blue: 0.29)
         case .calculator: return Color(red: 0.42, green: 0.71, blue: 0.98)
         case .pdf: return Color(red: 0.95, green: 0.45, blue: 0.42)
@@ -51,6 +54,7 @@ enum AppKind: String, Codable, CaseIterable, Identifiable {
     /// Default window size, as a fraction of the external display.
     var defaultSize: CGSize {
         switch self {
+        case .web: return CGSize(width: 0.52, height: 0.74)
         case .notes: return CGSize(width: 0.38, height: 0.52)
         case .calculator: return CGSize(width: 0.22, height: 0.46)
         case .pdf: return CGSize(width: 0.46, height: 0.70)

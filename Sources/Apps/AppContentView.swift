@@ -11,6 +11,7 @@ struct AppContentView: View {
 
     var body: some View {
         switch window.kind {
+        case .web:        WebBody(window: window)
         case .notes:      NotesBody(text: window.text, scale: scale)
         case .calculator: CalculatorBody(expression: window.text, scale: scale)
         case .pdf:        PDFBody(window: window)
