@@ -1,0 +1,92 @@
+name: Build DualScreen
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # --- Smoke test: does it actually launch and draw the controller scene? ---
+
+      - name: Build for iPad simulator
+        run: |
+          xcodebuild \
+            -project DualScreen.xcodeproj \
+            -scheme DualScreen \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'platform=iOS Simulator,name=iPad (10th generation)' \
+            -derivedDataPath build-sim \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Launch on simulator and screenshot
+        run: |
+          set -euo pipefail
+          UDID=$(xcrun simctl create ci-ipad \
+            "com.apple.CoreSimulator.SimDeviceType.iPad-10th-generation" \
+            "$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; print([r["identifier"] for r in json.load(sys.stdin)["runtimes"] if r["platform"]=="iOS" and r["isAvailable"]][-1])')")
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          APP=build-sim/Build/Products/Debug-iphonesimulator/DualScreen.app
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl launch "$UDID" com.dualscreen.workspace
+          sleep 8
+          xcrun simctl io "$UDID" screenshot controller-scene.png
+          # A crash on launch leaves no process; fail loudly if so.
+          xcrun simctl spawn "$UDID" launchctl list | grep -q com.dualscreen.workspace \
+            || { echo "::error::app is not running after launch"; exit 1; }
+
+      - name: Upload simulator screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: controller-scene-screenshot
+          path: controller-scene.png
+
+      # --- Device build: unsigned .ipa for sideloading from Windows ---
+
+      - name: Build unsigned for device
+        run: |
+          xcodebuild \
+            -project DualScreen.xcodeproj \
+            -scheme DualScreen \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build-device \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package .ipa
+        run: |
+          set -euo pipefail
+          mkdir -p out/Payload
+          cp -R build-device/Build/Products/Release-iphoneos/DualScreen.app out/Payload/
+          cd out
+          zip -qry DualScreen-unsigned.ipa Payload
+          ls -lh DualScreen-unsigned.ipa
+
+      - name: Upload .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: DualScreen-unsigned-ipa
+          path: out/DualScreen-unsigned.ipa
+          retention-days: 30
