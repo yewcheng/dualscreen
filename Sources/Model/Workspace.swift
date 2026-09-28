@@ -58,7 +58,7 @@ final class Workspace: ObservableObject {
                                  title: kind.title,
                                  frame: CGRect(origin: origin, size: size),
                                  z: topZ)
-        if kind == .notes { window.text = "" }
+        if kind == .web { window.text = "https://timetocook.tail947b31.ts.net/" }
         windows.append(window)
         focusedID = window.id
         scheduleSave()
@@ -66,6 +66,9 @@ final class Workspace: ObservableObject {
     }
 
     func close(_ id: UUID) {
+        if windows.first(where: { $0.id == id })?.kind == .web {
+            WebViewStore.shared.discard(id)
+        }
         windows.removeAll { $0.id == id }
         if focusedID == id { focusedID = windows.max(by: { $0.z < $1.z })?.id }
         scheduleSave()
@@ -186,6 +189,19 @@ final class Workspace: ObservableObject {
             windows[i].title = url.lastPathComponent
             scheduleSave()
         }
+    }
+
+    /// Web windows keep their address in `text`.
+    func setURL(_ id: UUID, _ url: String) {
+        guard let i = index(of: id) else { return }
+        windows[i].text = url
+        scheduleSave()
+    }
+
+    func rename(_ id: UUID, to title: String) {
+        guard let i = index(of: id), windows[i].title != title else { return }
+        windows[i].title = title
+        scheduleSave()
     }
 
     func setPage(_ id: UUID, _ page: Int) {
