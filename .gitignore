@@ -1,0 +1,5 @@
+DualScreen.xcodeproj/
+build*/
+out/
+.DS_Store
+xcuserdata/
