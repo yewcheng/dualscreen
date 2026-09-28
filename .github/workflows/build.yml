@@ -93,6 +93,18 @@ jobs:
           zip -qry DualScreen-unsigned.ipa Payload
           ls -lh DualScreen-unsigned.ipa
 
+      - name: Verify the built version matches what the source will advertise
+        run: |
+          set -euo pipefail
+          EXPECTED="0.3.${{ github.run_number }}"
+          PLIST=out/Payload/DualScreen.app/Info.plist
+          ACTUAL=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")
+          echo "Info.plist says $ACTUAL, source will advertise $EXPECTED"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::version mismatch — SideStore would reject this download"
+            exit 1
+          fi
+
       - name: Upload .ipa
         uses: actions/upload-artifact@v4
         with:

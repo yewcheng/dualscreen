@@ -26,8 +26,10 @@ targets:
       path: Support/Info.plist
       properties:
         CFBundleDisplayName: DualScreen
-        CFBundleShortVersionString: "0.3.0"
-        CFBundleVersion: "1"
+        # Substituted at build time so CI can stamp the release version;
+        # a literal here would silently override -MARKETING_VERSION.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
         UIRequiresFullScreen: true
         # Keeps the process (and so the external scene) alive when DualScreen is
@@ -52,3 +54,4 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.dualscreen.workspace
         MARKETING_VERSION: "0.3.0"
+        CURRENT_PROJECT_VERSION: "1"
