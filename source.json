@@ -16,19 +16,19 @@
       "screenshotURLs": [],
       "versions": [
         {
-          "version": "0.3.9",
+          "version": "0.3.10",
           "date": "2026-09-28",
           "localizedDescription": "Automated build.",
-          "downloadURL": "https://github.com/yewcheng/dualscreen/releases/download/v0.3.9/DualScreen-unsigned.ipa",
-          "size": 301700,
+          "downloadURL": "https://github.com/yewcheng/dualscreen/releases/download/v0.3.10/DualScreen-unsigned.ipa",
+          "size": 301705,
           "minOSVersion": "16.0"
         }
       ],
-      "version": "0.3.9",
+      "version": "0.3.10",
       "versionDate": "2026-09-28",
       "versionDescription": "Automated build.",
-      "downloadURL": "https://github.com/yewcheng/dualscreen/releases/download/v0.3.9/DualScreen-unsigned.ipa",
-      "size": 301700
+      "downloadURL": "https://github.com/yewcheng/dualscreen/releases/download/v0.3.10/DualScreen-unsigned.ipa",
+      "size": 301705
     }
   ],
   "news": []
