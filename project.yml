@@ -1,6 +1,8 @@
 name: DualScreen
 options:
   bundleIdPrefix: com.dualscreen
+  # Xcode 15 on the CI runner cannot read XcodeGen's newest pbxproj format.
+  objectVersion: 54
   deploymentTarget:
     iOS: "16.0"
   createIntermediateGroups: true
