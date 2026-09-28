@@ -22,6 +22,8 @@ struct WindowModel: Identifiable, Codable, Equatable {
     var bookmark: Data? = nil
     var fileName: String? = nil
     var pageIndex: Int = 0
+    /// Pointer position for web windows, normalised inside the window body.
+    var cursor: CGPoint = CGPoint(x: 0.5, y: 0.5)
 
     func pixelFrame(in size: CGSize) -> CGRect {
         CGRect(x: frame.origin.x * size.width,

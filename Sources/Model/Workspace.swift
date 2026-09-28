@@ -68,14 +68,17 @@ final class Workspace: ObservableObject {
     // MARK: - Window management
 
     @discardableResult
-    func open(_ kind: AppKind) -> UUID {
+    func open(_ kind: AppKind, url: String? = nil, title: String? = nil) -> UUID {
         let size = kind.defaultSize
         let origin = cascadeOrigin(for: size)
         var window = WindowModel(kind: kind,
                                  title: kind.title,
                                  frame: CGRect(origin: origin, size: size),
                                  z: topZ)
-        if kind == .web { window.text = "https://timetocook.tail947b31.ts.net/" }
+        if kind == .web {
+            window.text = url ?? "https://timetocook.tail947b31.ts.net/"
+            if let title { window.title = title }
+        }
         windows.append(window)
         focusedID = window.id
         scheduleSave()
@@ -219,6 +222,11 @@ final class Workspace: ObservableObject {
         guard let i = index(of: id), windows[i].title != title else { return }
         windows[i].title = title
         scheduleSave()
+    }
+
+    func setCursor(_ id: UUID, _ point: CGPoint) {
+        guard let i = index(of: id) else { return }
+        windows[i].cursor = point
     }
 
     func setPage(_ id: UUID, _ page: Int) {
