@@ -10,6 +10,8 @@ jobs:
   build:
     runs-on: macos-14
     timeout-minutes: 30
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -75,6 +77,8 @@ jobs:
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build-device \
+            MARKETING_VERSION=0.3.${{ github.run_number }} \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -95,3 +99,33 @@ jobs:
           name: DualScreen-unsigned-ipa
           path: out/DualScreen-unsigned.ipa
           retention-days: 30
+
+      # --- Over-the-air: publish a release and a SideStore source so the iPad
+      #     can install and update itself with no computer in the loop ---
+
+      - name: Publish release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="0.3.${{ github.run_number }}"
+          gh release create "v$VERSION" out/DualScreen-unsigned.ipa \
+            --title "DualScreen $VERSION" \
+            --notes "Automated build of ${{ github.sha }}. Unsigned — SideStore signs it on install."
+
+      - name: Update SideStore source
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          VERSION="0.3.${{ github.run_number }}"
+          SIZE=$(stat -f%z out/DualScreen-unsigned.ipa)
+          URL="https://github.com/${{ github.repository }}/releases/download/v$VERSION/DualScreen-unsigned.ipa"
+          python3 scripts/make_source.py "$VERSION" "$SIZE" "$(date -u +%Y-%m-%d)" "$URL" > source.json
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add source.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Publish $VERSION to the SideStore source [skip ci]"
+          git push
