@@ -1,8 +1,8 @@
 # DualScreen v0.3
 
 An iPadOS app that turns a USB-C → HDMI monitor into a second workspace: the
-monitor shows a window manager with Notes, Calculator, PDF, Files, Dashboard and
-Clock windows; the iPad becomes the control surface (launcher, trackpad,
+monitor shows a window manager with Web, Notes, Calculator, PDF, Files, Dashboard
+and Clock windows; the iPad becomes the control surface (launcher, trackpad,
 keyboard, snapping, live preview).
 
 ## What is and is not possible
@@ -38,7 +38,8 @@ Sources/
     Trackpad.swift         drag to move, pinch to resize
     DocumentPicker.swift   security-scoped file access
   Apps/
-    AppContentView.swift   the six app bodies
+    AppContentView.swift   app bodies
+    WebApp.swift           WKWebView hosting + the iPad-side driver
 project.yml                XcodeGen spec — the .xcodeproj is generated, not committed
 .github/workflows/build.yml
 ```
@@ -94,9 +95,14 @@ This is the question the whole project hinges on. With the app installed:
 Step 3 is the gate. If it passes, v0.4 (richer window manager) and v0.5 (more
 apps) are ordinary app development.
 
-## Deliberately not included
+## Web windows
 
-A web browser. Third-party iPadOS apps must use WKWebView, which behaves poorly
-in a non-interactive external scene and cannot be driven without hit-testing on
-that screen. If you want web content on the monitor, the honest approach is a
-purpose-built reader for specific sites, not a general browser.
+A `web` window is a WKWebView that renders on the monitor. Since that scene gets
+no touches, the controller supplies them: the pad maps 1:1 onto the window, a tap
+becomes a synthetic click through `document.elementFromPoint`, a drag scrolls
+`contentOffset` directly, and the text field types into whatever the last click
+focused. Bookmarked: Croissant TCG (over the tailnet) and Carousell.
+
+This is a remote control for a page, not Safari. Hover, long-press, pinch-zoom,
+text selection and drag-and-drop inside the page are not wired up, and sites that
+depend on real pointer events may not respond to a synthetic click.
