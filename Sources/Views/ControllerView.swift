@@ -14,7 +14,7 @@ struct ControllerView: View {
                     Launcher()
                     WorkspacePreview()
                     SnapBar()
-                    Trackpad().frame(height: 170)
+                    Trackpad().frame(height: 96)
                     WindowList()
                     InputPanel()
                 }
@@ -85,21 +85,42 @@ private struct Launcher: View {
 
     private let columns = [GridItem(.adaptive(minimum: 92), spacing: 10)]
 
+    /// The two sites get their own tiles so they open straight onto the right
+    /// page instead of a generic web window someone has to type an address into.
+    private struct Item: Identifiable {
+        let id = UUID()
+        let title: String
+        let symbol: String
+        let kind: AppKind
+        var url: String? = nil
+    }
+
+    private var items: [Item] {
+        [Item(title: "Croissant", symbol: "crown", kind: .web,
+              url: "https://timetocook.tail947b31.ts.net/"),
+         Item(title: "Carousell", symbol: "cart", kind: .web,
+              url: "https://www.carousell.sg/")]
+        + AppKind.allCases.filter { $0 != .web }.map {
+            Item(title: $0.title, symbol: $0.symbol, kind: $0)
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel("Open")
             LazyVGrid(columns: columns, spacing: 10) {
-                ForEach(AppKind.allCases) { kind in
+                ForEach(items) { item in
                     Button {
-                        ws.open(kind)
+                        ws.open(item.kind, url: item.url,
+                                title: item.url == nil ? nil : item.title)
                     } label: {
                         VStack(spacing: 6) {
-                            Image(systemName: kind.symbol).font(.title3)
-                            Text(kind.title).font(.caption)
+                            Image(systemName: item.symbol).font(.title3)
+                            Text(item.title).font(.caption)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(kind.accent.opacity(0.18),
+                        .background(item.kind.accent.opacity(0.18),
                                     in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                     .buttonStyle(.plain)

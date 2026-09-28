@@ -13,6 +13,9 @@ struct WorkspaceView: View {
                 ForEach(ws.windows.filter { !$0.isMinimised }.sorted(by: { $0.z < $1.z })) { window in
                     let frame = window.pixelFrame(in: geo.size)
                     WindowChrome(window: window, isFocused: window.id == ws.focusedID) {
+                        // Web windows draw their own pointer as a UIKit layer over
+                        // the page — see WebViewStore.moveCursor — so that pointing
+                        // does not republish state sixty times a second.
                         AppContentView(window: window, scale: chromeScale(geo.size))
                     }
                     .frame(width: max(frame.width, 1), height: max(frame.height, 1))
