@@ -27,6 +27,10 @@ struct ControllerView: View {
                     Menu {
                         Button { ws.tileAll() } label: { Label("Tile all windows", systemImage: "square.grid.2x2") }
                         Button { ws.cycleFocus() } label: { Label("Cycle focus", systemImage: "arrow.triangle.2.circlepath") }
+                        Toggle(isOn: Binding(get: { ws.keepAlive },
+                                             set: { ws.keepAlive = $0 })) {
+                            Label("Hold display in background", systemImage: "bolt.horizontal")
+                        }
                         Picker("Wallpaper", selection: Binding(get: { ws.wallpaper },
                                                                set: { ws.wallpaper = $0; ws.save() })) {
                             Text("Midnight").tag(0)

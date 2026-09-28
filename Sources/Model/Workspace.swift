@@ -17,6 +17,11 @@ final class Workspace: ObservableObject {
     @Published private(set) var externalScale: CGFloat = 1
     @Published var wallpaper: Int = 0
 
+    /// Whether to hold the display when DualScreen is backgrounded.
+    @Published var keepAlive: Bool = true {
+        didSet { syncKeepAlive() }
+    }
+
     /// True when a real HDMI/USB-C display is driving a second scene.
     var isExternalAttached: Bool { externalSize != nil }
 
@@ -41,11 +46,23 @@ final class Workspace: ObservableObject {
     func attachExternalDisplay(size: CGSize, scale: CGFloat) {
         externalSize = size
         externalScale = scale
+        syncKeepAlive()
     }
 
     func detachExternalDisplay() {
         externalSize = nil
+        syncKeepAlive()
         save()
+    }
+
+    /// Silence only plays while a display is actually attached — no point
+    /// burning battery when there is nothing to hold on to.
+    private func syncKeepAlive() {
+        if keepAlive && isExternalAttached {
+            KeepAlive.shared.start()
+        } else {
+            KeepAlive.shared.stop()
+        }
     }
 
     // MARK: - Window management
