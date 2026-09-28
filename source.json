@@ -1,0 +1,26 @@
+{
+  "name": "DualScreen",
+  "identifier": "com.dualscreen.source",
+  "subtitle": "Second-screen workspace for iPad",
+  "apps": [
+    {
+      "name": "DualScreen",
+      "bundleIdentifier": "com.dualscreen.workspace",
+      "developerName": "yewcheng",
+      "subtitle": "Turn an HDMI monitor into a real workspace",
+      "localizedDescription": "Renders a window manager on a USB-C/HDMI display while the iPad acts as the control surface: launcher, pointer pad, snapping and per-app input. Includes web, notes, calculator, PDF, files, dashboard and clock windows.",
+      "tintColor": "1E2438",
+      "category": "utilities",
+      "screenshots": [],
+      "versions": [
+        {
+          "version": "0.3.7",
+          "date": "2026-09-28",
+          "downloadURL": "https://github.com/yewcheng/dualscreen/releases/download/v0.3.7/DualScreen-unsigned.ipa",
+          "size": 301700,
+          "minOSVersion": "16.0"
+        }
+      ]
+    }
+  ]
+}
