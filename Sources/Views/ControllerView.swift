@@ -122,7 +122,9 @@ private struct WorkspacePreview: View {
                         .environmentObject(ws)
                         .frame(width: 1280, height: 1280 / ws.canvasAspect)
                         .scaleEffect(size.width / 1280, anchor: .topLeading)
-                        .frame(width: size.width, height: size.height)
+                        // scaleEffect does not change the layout size, so pin the
+                        // oversized box to the top-left instead of letting it centre.
+                        .frame(width: size.width, height: size.height, alignment: .topLeading)
                         .allowsHitTesting(false)
 
                     // Hit layer: topmost window under the tap gets focus.
