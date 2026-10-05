@@ -227,6 +227,54 @@ final class WebViewStore: NSObject {
         view.takeSnapshot(with: config) { image, _ in completion(image) }
     }
 
+    /// The page at full size, for reading and recording rather than previewing.
+    @MainActor
+    func fullSnapshot(_ id: UUID) async -> UIImage? {
+        guard let view = views[id], view.bounds.width > 0 else { return nil }
+        return await withCheckedContinuation { done in
+            view.takeSnapshot(with: nil) { image, _ in done.resume(returning: image) }
+        }
+    }
+
+    enum PostError: LocalizedError {
+        case noWindow, notLoggedIn, server(String)
+        var errorDescription: String? {
+            switch self {
+            case .noWindow:     return "The ClaimDesk window isn't open."
+            case .notLoggedIn:  return "Log in to ClaimDesk in its window first."
+            case .server(let m): return m
+            }
+        }
+    }
+
+    /// POST a JPEG from inside the page in window `id`, so the request carries
+    /// that page's own login cookie. Returns the decoded JSON reply.
+    @MainActor
+    func postImage(_ id: UUID, path: String, jpeg: Data) async throws -> [String: Any] {
+        guard let view = views[id] else { throw PostError.noWindow }
+        let js = """
+        const bytes = Uint8Array.from(atob(img), c => c.charCodeAt(0));
+        const r = await fetch(path, { method: 'POST', credentials: 'same-origin',
+                                      headers: { 'Content-Type': 'image/jpeg' }, body: bytes });
+        return JSON.stringify({ status: r.status, body: await r.text() });
+        """
+        let raw = try await view.callAsyncJavaScript(
+            js, arguments: ["img": jpeg.base64EncodedString(), "path": path],
+            in: nil, contentWorld: .page)
+        guard let text = raw as? String,
+              let outer = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
+              let status = outer["status"] as? Int else {
+            throw PostError.server("ClaimDesk sent back something unexpected.")
+        }
+        let body = (outer["body"] as? String) ?? ""
+        let json = (try? JSONSerialization.jsonObject(with: Data(body.utf8))) as? [String: Any] ?? [:]
+        if status == 401 { throw PostError.notLoggedIn }
+        guard (200..<300).contains(status) else {
+            throw PostError.server((json["detail"] as? String) ?? "ClaimDesk error \(status)")
+        }
+        return json
+    }
+
     /// Accepts "carousell.sg" as readily as a full URL.
     static func normalised(_ raw: String) -> URL? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)

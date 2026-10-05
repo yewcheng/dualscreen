@@ -56,6 +56,7 @@ struct ControllerView: View {
         ScrollView {
             VStack(spacing: 18) {
                 DisplayBanner()
+                LiveCapturePanel()
                 Launcher()
                 SnapBar()
                 WindowList()
