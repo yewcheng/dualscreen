@@ -49,6 +49,70 @@ final class LiveCapture: ObservableObject {
         return host.contains("timetocook") || w.title.localizedCaseInsensitiveContains("claimdesk")
     }
 
+    // MARK: - Automatic
+
+    /// Watching the auction: a new lot number on screen triggers a capture.
+    @Published private(set) var auto = false
+    @Published private(set) var watching: String?
+    private var watcher: Task<Void, Never>?
+
+    /// Seconds to wait after a lot appears before the first picture, so the
+    /// seller has the card up; then retries while the card is not recognised.
+    private static let attempts: [Double] = [2, 6, 12]
+    private static let pollSeconds: Double = 1.5
+
+    func setAuto(_ on: Bool, auction: @escaping () -> WindowModel?, claimDesk: @escaping () -> WindowModel?) {
+        watcher?.cancel()
+        auto = on
+        watching = nil
+        guard on else { return }
+        watcher = Task { [weak self] in
+            var seen: Int?
+            var misses = 0
+            var lotTask: Task<Void, Never>?
+            while !Task.isCancelled {
+                guard let self else { return }
+                if let a = auction(), let c = claimDesk(),
+                   let image = await WebViewStore.shared.fullSnapshot(a.id) {
+                    if let lot = await Self.readLotNumber(image) {
+                        misses = 0
+                        self.watching = "watching · lot \(lot) on screen"
+                        if lot != seen {
+                            seen = lot
+                            lotTask?.cancel()
+                            lotTask = Task { await self.captureLot(lot, auction: a, claimDesk: c) }
+                        }
+                    } else {
+                        misses += 1
+                        if misses >= 4 { self.watching = "watching · no lot number on screen" }
+                    }
+                } else {
+                    self.watching = "open the auction and ClaimDesk windows"
+                }
+                try? await Task.sleep(nanoseconds: UInt64(Self.pollSeconds * 1_000_000_000))
+            }
+            lotTask?.cancel()
+        }
+    }
+
+    /// One lot: picture it after the first delay, and again at the later ones
+    /// while the index has not recognised it. Each retry replaces the same lot.
+    private func captureLot(_ lot: Int, auction: WindowModel, claimDesk: WindowModel) async {
+        var elapsed: Double = 0
+        for at in Self.attempts {
+            try? await Task.sleep(nanoseconds: UInt64((at - elapsed) * 1_000_000_000))
+            elapsed = at
+            if Task.isCancelled { return }           // the next lot has started
+            guard let image = await WebViewStore.shared.fullSnapshot(auction.id),
+                  let jpeg = image.jpegData(compressionQuality: 0.85) else { continue }
+            // Still the same lot? If the number moved on, that lot owns the picture.
+            if let now = await Self.readLotNumber(image), now != lot { return }
+            if await send(jpeg, lot: lot, fromScreen: true, claimDesk: claimDesk) { return }
+        }
+    }
+
+    // MARK: - By hand
+
     func capture(auction: WindowModel, claimDesk: WindowModel) async {
         busy = true
         error = nil
@@ -66,10 +130,17 @@ final class LiveCapture: ObservableObject {
             error = "Couldn't read a lot number off the screen. Type it in the Lot box."
             return
         }
-        lastLot = lot
         manualLot = ""
+        _ = await send(jpeg, lot: lot, fromScreen: typed == nil && read != nil, claimDesk: claimDesk)
+    }
 
-        var result = Result(lotNo: lot, lotFromScreen: typed == nil && read != nil)
+    /// Post one picture as `lot`; true when ClaimDesk recognised the card.
+    /// A retry of a lot already listed updates that row instead of adding one.
+    @discardableResult
+    private func send(_ jpeg: Data, lot: Int, fromScreen: Bool, claimDesk: WindowModel) async -> Bool {
+        lastLot = lot
+        var result = Result(lotNo: lot, lotFromScreen: fromScreen)
+        var recognised = false
         do {
             let out = try await WebViewStore.shared.postImage(
                 claimDesk.id,
@@ -78,13 +149,18 @@ final class LiveCapture: ObservableObject {
             result.cardName = out["card_name"] as? String
             let set = [out["card_set"] as? String, out["card_number"] as? String]
                 .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-            result.detail = (out["recognised"] as? Bool == true)
-                ? set : "saved — not recognised; name it in ClaimDesk"
+            recognised = out["recognised"] as? Bool == true
+            result.detail = recognised ? set : "saved — not recognised; name it in ClaimDesk"
         } catch {
             result.failed = true
             result.detail = error.localizedDescription
         }
-        results.insert(result, at: 0)
+        if let i = results.firstIndex(where: { $0.lotNo == lot }) {
+            results[i] = result
+        } else {
+            results.insert(result, at: 0)
+        }
+        return recognised
     }
 
     /// The lot number printed on the stream: "Lot 12", "Lot #12", else a bare "#12".
@@ -159,6 +235,18 @@ struct LiveCapturePanel: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(model.busy)
+                }
+
+                Toggle(isOn: Binding(
+                    get: { model.auto },
+                    set: { on in
+                        model.setAuto(on, auction: { self.auction }, claimDesk: { self.claimDesk })
+                    })) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Auto-capture each new lot").font(.callout)
+                        Text(model.watching ?? "captures when the lot number on screen changes")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
                 }
 
                 if let error = model.error {
