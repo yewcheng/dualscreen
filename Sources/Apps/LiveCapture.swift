@@ -163,8 +163,12 @@ final class LiveCapture: ObservableObject {
                 claimDesk.id,
                 path: "/api/carousell/live-capture?date=\(Self.showDate())&lot_no=\(lot)",
                 jpeg: jpeg)
+            // The card's own name first — Japanese for a Japanese card — then
+            // the English reading, the set and the number.
             result.cardName = out["card_name"] as? String
-            let set = [out["card_set"] as? String, out["card_number"] as? String]
+            let set = [out["card_name_en"] as? String,
+                       (out["card_set_en"] as? String) ?? (out["card_set"] as? String),
+                       out["card_number"] as? String]
                 .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
             recognised = out["recognised"] as? Bool == true
             result.detail = recognised ? set : "saved — not recognised; name it in ClaimDesk"
