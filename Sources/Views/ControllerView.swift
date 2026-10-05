@@ -14,7 +14,7 @@ struct ControllerView: View {
                 if geo.size.width > geo.size.height {
                     HStack(alignment: .top, spacing: 18) {
                         WorkspacePreview()
-                            .frame(width: geo.size.width * 0.58)
+                            .frame(width: geo.size.width * 0.70)
                         controls
                     }
                     .padding(18)
@@ -151,25 +151,35 @@ private struct Launcher: View {
 // MARK: - Preview
 
 /// A live miniature of the external display, rendered from the same views, and
-/// the place windows are arranged: tap to focus, drag to move, drag the
-/// bottom-right corner to resize, double-tap to maximise.
+/// the one surface everything is done on: drag a title bar to move, drag the
+/// bottom-right corner to resize, double-tap a title bar to maximise, and tap or
+/// drag inside a web page to click or scroll it.
 private struct WorkspacePreview: View {
     @EnvironmentObject private var ws: Workspace
 
-    private enum DragMode { case move, resize }
+    private enum DragMode { case move, resize, scroll }
     @State private var drag: (id: UUID, mode: DragMode)?
     @State private var lastTranslation: CGSize = .zero
 
+    /// The preview renders WorkspaceView at this width and scales it down.
+    private static let canvasWidth: CGFloat = 1280
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionLabel(ws.isExternalAttached ? "Monitor" : "Monitor (preview)")
             GeometryReader { geo in
                 let size = CGSize(width: geo.size.width, height: geo.size.width / ws.canvasAspect)
+                let canvas = CGSize(width: Self.canvasWidth, height: Self.canvasWidth / ws.canvasAspect)
+                let s = size.width / canvas.width
+                let layout = Layout(
+                    area: CGSize(width: size.width,
+                                 height: WorkspaceView.windowArea(in: canvas).height * s),
+                    titleHeight: WindowChromeMetrics.titleHeight * s)
+
                 ZStack(alignment: .topLeading) {
                     WorkspaceView()
                         .environmentObject(ws)
-                        .frame(width: 1280, height: 1280 / ws.canvasAspect)
-                        .scaleEffect(size.width / 1280, anchor: .topLeading)
+                        .frame(width: canvas.width, height: canvas.height)
+                        .scaleEffect(s, anchor: .topLeading)
                         // scaleEffect does not change the layout size, so pin the
                         // oversized box to the top-left instead of letting it centre.
                         .frame(width: size.width, height: size.height, alignment: .topLeading)
@@ -178,51 +188,43 @@ private struct WorkspacePreview: View {
 
                     // Resize grips on the visible windows' bottom-right corners.
                     ForEach(ws.windows.filter { !$0.isMinimised }) { w in
+                        let f = layout.frame(of: w)
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.white.opacity(w.id == ws.focusedID ? 0.9 : 0.4))
-                            .position(x: w.frame.maxX * size.width - 9,
-                                      y: w.frame.maxY * size.height - 9)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(4)
+                            .background(Circle().fill(Color.black.opacity(0.55)))
+                            .opacity(w.id == ws.focusedID ? 1 : 0.5)
+                            .position(x: f.maxX - 11, y: f.maxY - 11)
                             .allowsHitTesting(false)
                     }
 
                     // Hit layer: one surface takes every gesture and works out
-                    // which window is under the finger.
+                    // which window, and which part of it, is under the finger.
                     Color.clear
                         .contentShape(Rectangle())
                         .gesture(
                             SpatialTapGesture(count: 2)
                                 .onEnded { e in
-                                    if let hit = hitTest(e.location, size) { ws.toggleMaximise(hit.id) }
+                                    guard let hit = layout.hit(e.location, in: ws.windows) else { return }
+                                    if hit.window.kind == .web, let p = hit.body {
+                                        click(hit.window.id, at: p)
+                                    } else {
+                                        ws.toggleMaximise(hit.window.id)
+                                    }
                                 }
                                 .exclusively(before: SpatialTapGesture(count: 1)
                                     .onEnded { e in
-                                        if let hit = hitTest(e.location, size) { ws.focus(hit.id) }
+                                        guard let hit = layout.hit(e.location, in: ws.windows) else { return }
+                                        ws.focus(hit.window.id)
+                                        if hit.window.kind == .web, let p = hit.body {
+                                            click(hit.window.id, at: p)
+                                        }
                                     })
                         )
                         .simultaneousGesture(
                             DragGesture(minimumDistance: 4)
-                                .onChanged { value in
-                                    if drag == nil {
-                                        guard let hit = hitTest(value.startLocation, size) else { return }
-                                        let f = hit.pixelFrame(in: size)
-                                        let grip: CGFloat = 32
-                                        let nearCorner = value.startLocation.x > f.maxX - grip
-                                            && value.startLocation.y > f.maxY - grip
-                                        drag = (hit.id, nearCorner ? .resize : .move)
-                                        lastTranslation = .zero
-                                        ws.focus(hit.id)
-                                    }
-                                    guard let drag else { return }
-                                    let delta = CGSize(
-                                        width: (value.translation.width - lastTranslation.width) / size.width,
-                                        height: (value.translation.height - lastTranslation.height) / size.height)
-                                    lastTranslation = value.translation
-                                    switch drag.mode {
-                                    case .move:   ws.move(drag.id, by: delta)
-                                    case .resize: ws.resize(drag.id, by: delta)
-                                    }
-                                }
+                                .onChanged { value in dragChanged(value, layout) }
                                 .onEnded { _ in drag = nil }
                         )
                         .frame(width: size.width, height: size.height)
@@ -233,17 +235,78 @@ private struct WorkspacePreview: View {
             }
             .aspectRatio(ws.canvasAspect, contentMode: .fit)
 
-            Text("tap to focus · drag to move · drag ↘ corner to resize · double-tap to maximise")
+            Text("drag title bar to move · drag ↘ to resize · double-tap title to maximise · tap or drag a page to click or scroll")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
     }
 
-    private func hitTest(_ point: CGPoint, _ size: CGSize) -> WindowModel? {
-        let n = CGPoint(x: point.x / size.width, y: point.y / size.height)
-        return ws.windows
-            .filter { !$0.isMinimised && $0.frame.contains(n) }
-            .max(by: { $0.z < $1.z })
+    private func dragChanged(_ value: DragGesture.Value, _ layout: Layout) {
+        if drag == nil {
+            guard let hit = layout.hit(value.startLocation, in: ws.windows) else { return }
+            let f = layout.frame(of: hit.window)
+            let grip: CGFloat = 36
+            let mode: DragMode
+            if value.startLocation.x > f.maxX - grip && value.startLocation.y > f.maxY - grip {
+                mode = .resize
+            } else if hit.window.kind == .web && hit.body != nil {
+                mode = .scroll
+            } else {
+                mode = .move
+            }
+            drag = (hit.window.id, mode)
+            lastTranslation = .zero
+            ws.focus(hit.window.id)
+        }
+        guard let current = drag else { return }
+        let dx = value.translation.width - lastTranslation.width
+        let dy = value.translation.height - lastTranslation.height
+        lastTranslation = value.translation
+        let normalised = CGSize(width: dx / layout.area.width, height: dy / layout.area.height)
+        switch current.mode {
+        case .move:
+            ws.move(current.id, by: normalised)
+        case .resize:
+            ws.resize(current.id, by: normalised)
+        case .scroll:
+            guard let w = ws.windows.first(where: { $0.id == current.id }) else { return }
+            let body = layout.body(of: w)
+            // Dragging up pushes the page up, as on a touchscreen.
+            WebViewStore.shared.scroll(current.id, byFractionOfViewport:
+                CGSize(width: -dx / max(body.width, 1), height: -dy / max(body.height, 1)))
+        }
+    }
+
+    private func click(_ id: UUID, at p: CGPoint) {
+        ws.setCursor(id, p)
+        WebViewStore.shared.moveCursor(id, to: p)
+        WebViewStore.shared.click(id, at: p)
+        WebViewStore.shared.flashCursor(id)
+    }
+
+    /// Where windows sit inside the preview, in preview points.
+    private struct Layout {
+        let area: CGSize
+        let titleHeight: CGFloat
+
+        func frame(of w: WindowModel) -> CGRect { w.pixelFrame(in: area) }
+
+        func body(of w: WindowModel) -> CGRect {
+            let f = frame(of: w)
+            return CGRect(x: f.minX, y: f.minY + titleHeight,
+                          width: f.width, height: max(f.height - titleHeight, 1))
+        }
+
+        /// Topmost window under `point`, plus the point normalised to its body
+        /// (nil when the point is on the title bar).
+        func hit(_ point: CGPoint, in windows: [WindowModel]) -> (window: WindowModel, body: CGPoint?)? {
+            guard let w = windows
+                .filter({ !$0.isMinimised && frame(of: $0).contains(point) })
+                .max(by: { $0.z < $1.z }) else { return nil }
+            let b = body(of: w)
+            guard b.contains(point) else { return (w, nil) }
+            return (w, CGPoint(x: (point.x - b.minX) / b.width, y: (point.y - b.minY) / b.height))
+        }
     }
 }
 

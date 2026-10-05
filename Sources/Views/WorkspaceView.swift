@@ -11,7 +11,7 @@ struct WorkspaceView: View {
                 Wallpaper(index: ws.wallpaper)
 
                 ForEach(ws.windows.filter { !$0.isMinimised }.sorted(by: { $0.z < $1.z })) { window in
-                    let frame = window.pixelFrame(in: geo.size)
+                    let frame = window.pixelFrame(in: Self.windowArea(in: geo.size).size)
                     WindowChrome(window: window, isFocused: window.id == ws.focusedID) {
                         // Web windows draw their own pointer as a UIKit layer over
                         // the page — see WebViewStore.moveCursor — so that pointing
@@ -25,7 +25,7 @@ struct WorkspaceView: View {
 
                 StatusBar(size: geo.size)
                     .frame(width: geo.size.width)
-                    .offset(y: geo.size.height - 34 * chromeScale(geo.size))
+                    .offset(y: Self.windowArea(in: geo.size).height)
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .clipped()
@@ -39,7 +39,18 @@ struct WorkspaceView: View {
     /// same physical size on both. Scale chrome off the display width so title
     /// bars stay readable from a desk away.
     private func chromeScale(_ size: CGSize) -> CGFloat {
+        Self.chromeScale(size)
+    }
+
+    static func chromeScale(_ size: CGSize) -> CGFloat {
         max(0.85, min(1.6, size.width / 1180))
+    }
+
+    /// The part of the display windows live in: everything above the status
+    /// bar, so no window's bottom edge ever hides behind it.
+    static func windowArea(in size: CGSize) -> CGRect {
+        CGRect(x: 0, y: 0, width: size.width,
+               height: size.height - StatusBar.height * chromeScale(size))
     }
 }
 
@@ -62,6 +73,7 @@ struct Wallpaper: View {
 
 /// Bottom strip: clock, window count, and the minimised dock.
 private struct StatusBar: View {
+    static let height: CGFloat = 34
     @EnvironmentObject private var ws: Workspace
     let size: CGSize
     @State private var now = Date()
@@ -95,7 +107,7 @@ private struct StatusBar: View {
                 .foregroundStyle(.white.opacity(0.8))
         }
         .padding(.horizontal, 18)
-        .frame(height: 34)
+        .frame(height: Self.height * WorkspaceView.chromeScale(size))
         .background(.black.opacity(0.35))
         .onReceive(tick) { now = $0 }
     }

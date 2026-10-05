@@ -1,5 +1,11 @@
 import SwiftUI
 
+/// Shared so the controller can tell a title-bar touch from a page touch.
+enum WindowChromeMetrics {
+    /// Title bar plus the hairline under it.
+    static let titleHeight: CGFloat = 31
+}
+
 /// Title bar + body for one window. The traffic-light dots are indicators, not
 /// buttons: nothing on the external display can be tapped.
 struct WindowChrome<Content: View>: View {
@@ -26,7 +32,7 @@ struct WindowChrome<Content: View>: View {
                 }
             }
             .padding(.horizontal, 12)
-            .frame(height: 30)
+            .frame(height: WindowChromeMetrics.titleHeight - 1)
             .background(Color.white.opacity(isFocused ? 0.13 : 0.07))
 
             Divider().overlay(Color.white.opacity(0.08))
