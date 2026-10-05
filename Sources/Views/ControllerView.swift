@@ -160,6 +160,7 @@ private struct WorkspacePreview: View {
     private enum DragMode { case move, resize, scroll }
     @State private var drag: (id: UUID, mode: DragMode)?
     @State private var lastTranslation: CGSize = .zero
+    @State private var lastTitleTap: (id: UUID, at: Date)?
 
     /// The preview renders WorkspaceView at this width and scales it down.
     private static let canvasWidth: CGFloat = 1280
@@ -203,25 +204,36 @@ private struct WorkspacePreview: View {
                     // which window, and which part of it, is under the finger.
                     Color.clear
                         .contentShape(Rectangle())
+                        // One tap recogniser, with double-taps detected by hand:
+                        // a SwiftUI double-tap gesture would hold back every
+                        // single tap — every click on a page — until it timed out.
                         .gesture(
-                            SpatialTapGesture(count: 2)
+                            SpatialTapGesture(count: 1)
                                 .onEnded { e in
                                     guard let hit = layout.hit(e.location, in: ws.windows) else { return }
+                                    ws.focus(hit.window.id)
                                     if hit.window.kind == .web, let p = hit.body {
                                         click(hit.window.id, at: p)
-                                    } else {
+                                        return
+                                    }
+                                    let now = Date()
+                                    if let last = lastTitleTap, last.id == hit.window.id,
+                                       now.timeIntervalSince(last.at) < 0.35 {
                                         ws.toggleMaximise(hit.window.id)
+                                        lastTitleTap = nil
+                                    } else {
+                                        lastTitleTap = (hit.window.id, now)
                                     }
                                 }
-                                .exclusively(before: SpatialTapGesture(count: 1)
-                                    .onEnded { e in
-                                        guard let hit = layout.hit(e.location, in: ws.windows) else { return }
-                                        ws.focus(hit.window.id)
-                                        if hit.window.kind == .web, let p = hit.body {
-                                            click(hit.window.id, at: p)
-                                        }
-                                    })
                         )
+                        // A mouse or trackpad hovering over a page moves the
+                        // pointer on the monitor.
+                        .onContinuousHover { phase in
+                            guard case .active(let point) = phase,
+                                  let hit = layout.hit(point, in: ws.windows),
+                                  hit.window.kind == .web, let p = hit.body else { return }
+                            WebViewStore.shared.moveCursor(hit.window.id, to: p)
+                        }
                         .simultaneousGesture(
                             DragGesture(minimumDistance: 4)
                                 .onChanged { value in dragChanged(value, layout) }

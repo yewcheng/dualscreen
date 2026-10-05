@@ -97,17 +97,28 @@ final class WebViewStore: NSObject {
         guard let view = views[id] else { return }
         let x = point.x * view.bounds.width
         let y = point.y * view.bounds.height
+        // Modern sites listen for pointer events rather than mouse events, and
+        // a synthetic 'click' event is not always honoured — so send the full
+        // pointer/mouse sequence, then call the real click() on the nearest
+        // clickable ancestor (a link, button, label or input).
         let js = """
         (function() {
           var el = document.elementFromPoint(\(x), \(y));
           if (!el) { return 'miss'; }
-          if (el.focus) { try { el.focus(); } catch (e) {} }
-          var opts = { bubbles: true, cancelable: true, view: window,
-                       clientX: \(x), clientY: \(y) };
+          var opts = { bubbles: true, cancelable: true, composed: true, view: window,
+                       clientX: \(x), clientY: \(y), button: 0, buttons: 1,
+                       pointerId: 1, pointerType: 'mouse', isPrimary: true };
+          el.dispatchEvent(new PointerEvent('pointerover', opts));
+          el.dispatchEvent(new PointerEvent('pointerdown', opts));
           el.dispatchEvent(new MouseEvent('mousedown', opts));
+          var target = el.closest('a, button, label, input, select, textarea, summary, [role=button], [role=link], [role=tab], [role=option], [role=menuitem], [onclick], [tabindex]') || el;
+          if (target.focus) { try { target.focus({ preventScroll: true }); } catch (e) {} }
+          opts.buttons = 0;
+          el.dispatchEvent(new PointerEvent('pointerup', opts));
           el.dispatchEvent(new MouseEvent('mouseup', opts));
-          el.dispatchEvent(new MouseEvent('click', opts));
-          return el.tagName;
+          if (typeof target.click === 'function') { target.click(); }
+          else { el.dispatchEvent(new MouseEvent('click', opts)); }
+          return target.tagName;
         })();
         """
         view.evaluateJavaScript(js)
@@ -353,12 +364,12 @@ struct WebBody: View {
 }
 
 /// The miniature's stand-in for a page that is live on the monitor: a snapshot
-/// of the real web view, refreshed about once a second.
+/// of the real web view, refreshed about three times a second.
 private struct WebMirror: View {
     let window: WindowModel
     @State private var shot: UIImage?
 
-    private let refresh = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    private let refresh = Timer.publish(every: 0.3, on: .main, in: .common).autoconnect()
 
     var body: some View {
         GeometryReader { geo in
