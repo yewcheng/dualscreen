@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import Combine
 
 /// Web windows are the one case where the non-interactive external scene really
 /// bites: the page renders on the monitor but receives no touches there. So the
@@ -43,6 +44,16 @@ final class WebViewStore: NSObject {
         return view
     }
 
+    /// Fires with a window id when its page has probably changed, so the
+    /// controller's picture of it can refresh without waiting for the timer.
+    let pageChanged = PassthroughSubject<UUID, Never>()
+
+    private func notifySoon(_ id: UUID) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            self?.pageChanged.send(id)
+        }
+    }
+
     func discard(_ id: UUID) {
         cursorViews.removeValue(forKey: id)?.removeFromSuperview()
         if let view = views.removeValue(forKey: id) {
@@ -77,6 +88,7 @@ final class WebViewStore: NSObject {
             x: min(max(0, scrollView.contentOffset.x + delta.width * scrollView.bounds.width), maxX),
             y: min(max(0, scrollView.contentOffset.y + delta.height * scrollView.bounds.height), maxY))
         scrollView.setContentOffset(target, animated: false)
+        pageChanged.send(id)
     }
 
     /// Click whatever sits at a normalised point in the window.
@@ -99,6 +111,7 @@ final class WebViewStore: NSObject {
         })();
         """
         view.evaluateJavaScript(js)
+        notifySoon(id)
     }
 
     /// Type into whatever the last click focused.
@@ -367,6 +380,10 @@ private struct WebMirror: View {
             }
             .onAppear { grab(geo.size) }
             .onReceive(refresh) { _ in grab(geo.size) }
+            .onReceive(WebViewStore.shared.pageChanged.filter { $0 == window.id }
+                .throttle(for: .milliseconds(120), scheduler: RunLoop.main, latest: true)) { _ in
+                grab(geo.size)
+            }
         }
     }
 
@@ -424,9 +441,6 @@ struct WebControls: View {
                 Spacer()
             }
 
-            WebPad(window: window)
-                .frame(height: 300)
-
             HStack(spacing: 8) {
                 TextField("type into the focused field", text: $typing)
                     .textFieldStyle(.roundedBorder)
@@ -450,196 +464,5 @@ struct WebControls: View {
         addressFocused = false
         ws.setURL(window.id, address)
         WebViewStore.shared.load(window.id, address)
-    }
-}
-
-/// Absolute pointing surface. What you see in it is the page; where you touch is
-/// where the cursor goes; the same cursor is drawn on the monitor.
-///
-/// One finger moves the pointer, a tap clicks, two fingers scroll, and a mouse or
-/// trackpad drives the pointer by hover with its wheel scrolling — iPadOS delivers
-/// those as indirect events, which is why this is UIKit and not a SwiftUI gesture.
-final class PointerPadView: UIView {
-    var onCursor: ((CGPoint) -> Void)?
-    var onClick: ((CGPoint) -> Void)?
-    var onScroll: ((CGSize) -> Void)?
-
-    private var lastScroll: CGPoint = .zero
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        isMultipleTouchEnabled = true
-        backgroundColor = .clear
-
-        addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleTap)))
-
-        let move = UIPanGestureRecognizer(target: self, action: #selector(handleMove))
-        move.maximumNumberOfTouches = 1
-        addGestureRecognizer(move)
-
-        let twoFinger = UIPanGestureRecognizer(target: self, action: #selector(handleScroll))
-        twoFinger.minimumNumberOfTouches = 2
-        addGestureRecognizer(twoFinger)
-
-        // Mouse wheel and trackpad scrolling arrive as indirect events, never as
-        // touches, so this recogniser accepts no touch types at all.
-        let wheel = UIPanGestureRecognizer(target: self, action: #selector(handleScroll))
-        wheel.allowedScrollTypesMask = .all
-        wheel.allowedTouchTypes = []
-        addGestureRecognizer(wheel)
-
-        addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(handleHover)))
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    private func normalised(_ point: CGPoint) -> CGPoint {
-        CGPoint(x: min(max(point.x / max(bounds.width, 1), 0), 1),
-                y: min(max(point.y / max(bounds.height, 1), 0), 1))
-    }
-
-    @objc private func handleTap(_ g: UITapGestureRecognizer) {
-        let p = normalised(g.location(in: self))
-        onCursor?(p)
-        onClick?(p)
-    }
-
-    @objc private func handleMove(_ g: UIPanGestureRecognizer) {
-        onCursor?(normalised(g.location(in: self)))
-    }
-
-    @objc private func handleHover(_ g: UIHoverGestureRecognizer) {
-        switch g.state {
-        case .began, .changed: onCursor?(normalised(g.location(in: self)))
-        default: break
-        }
-    }
-
-    @objc private func handleScroll(_ g: UIPanGestureRecognizer) {
-        switch g.state {
-        case .began:
-            lastScroll = .zero
-        case .changed:
-            let t = g.translation(in: self)
-            let dx = t.x - lastScroll.x
-            let dy = t.y - lastScroll.y
-            lastScroll = t
-            // Dragging up pushes the page up, as on a touchscreen.
-            onScroll?(CGSize(width: -dx / max(bounds.width, 1),
-                             height: -dy / max(bounds.height, 1)))
-        default:
-            lastScroll = .zero
-        }
-    }
-}
-
-struct PointerPad: UIViewRepresentable {
-    var onCursor: (CGPoint) -> Void
-    var onClick: (CGPoint) -> Void
-    var onScroll: (CGSize) -> Void
-
-    func makeUIView(context: Context) -> PointerPadView {
-        let view = PointerPadView()
-        view.onCursor = onCursor
-        view.onClick = onClick
-        view.onScroll = onScroll
-        return view
-    }
-
-    func updateUIView(_ view: PointerPadView, context: Context) {
-        view.onCursor = onCursor
-        view.onClick = onClick
-        view.onScroll = onScroll
-    }
-}
-
-/// The pad, the page picture behind it, and the cursor on top.
-struct WebPad: View {
-    @EnvironmentObject private var ws: Workspace
-    let window: WindowModel
-
-    @State private var shot: UIImage?
-    @State private var cursor: CGPoint = CGPoint(x: 0.5, y: 0.5)
-    @State private var flash = false
-
-    private let refresh = Timer.publish(every: 0.6, on: .main, in: .common).autoconnect()
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.primary.opacity(0.06))
-
-                if let shot {
-                    Image(uiImage: shot)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .clipped()
-                } else {
-                    VStack(spacing: 6) {
-                        ProgressView()
-                        Text("waiting for the page").font(.caption2).foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-
-                Crosshair(flash: flash)
-                    .position(x: cursor.x * geo.size.width, y: cursor.y * geo.size.height)
-                    .allowsHitTesting(false)
-
-                PointerPad(
-                    onCursor: { p in
-                        cursor = p
-                        WebViewStore.shared.moveCursor(window.id, to: p)
-                    },
-                    onClick: { p in
-                        WebViewStore.shared.click(window.id, at: p)
-                        WebViewStore.shared.flashCursor(window.id)
-                        ws.setCursor(window.id, p)
-                        flash = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { flash = false }
-                        // The page has probably changed; refresh sooner than the timer.
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { grab(geo.size) }
-                    },
-                    onScroll: { delta in
-                        WebViewStore.shared.scroll(window.id, byFractionOfViewport: delta)
-                        grab(geo.size)
-                    })
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.12)))
-            .onAppear {
-                cursor = window.cursor
-                WebViewStore.shared.moveCursor(window.id, to: window.cursor)
-                grab(geo.size)
-            }
-            .onReceive(refresh) { _ in grab(geo.size) }
-        }
-    }
-
-    private func grab(_ size: CGSize) {
-        WebViewStore.shared.snapshot(window.id, into: size) { image in
-            if let image { shot = image }
-        }
-    }
-}
-
-private struct Crosshair: View {
-    let flash: Bool
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(Color.accentColor.opacity(flash ? 0.45 : 0.18))
-                .frame(width: flash ? 30 : 20, height: flash ? 30 : 20)
-            Circle()
-                .strokeBorder(Color.white, lineWidth: 2)
-                .background(Circle().fill(Color.accentColor))
-                .frame(width: 11, height: 11)
-        }
-        .shadow(color: .black.opacity(0.4), radius: 3)
-        .animation(.easeOut(duration: 0.15), value: flash)
     }
 }
