@@ -51,15 +51,21 @@ final class LiveCapture: ObservableObject {
 
     // MARK: - Automatic
 
-    /// Watching the auction: a new lot number on screen triggers a capture.
+    /// Watching the auction. On Carousell Live the card is shown with its name
+    /// BEFORE the lot number appears (the number only shows while the timer
+    /// counts down), so frames are kept while no number is on screen, and when
+    /// a new number appears those frames are what gets sent as that lot.
     @Published private(set) var auto = false
     @Published private(set) var watching: String?
     private var watcher: Task<Void, Never>?
 
-    /// Seconds to wait after a lot appears before the first picture, so the
-    /// seller has the card up; then retries while the card is not recognised.
-    private static let attempts: [Double] = [2, 6, 12]
     private static let pollSeconds: Double = 1.5
+    /// Frames kept from the card-showing phase (about the last 15 seconds).
+    private static let keepFrames = 10
+    /// How many of those to try, newest first, before falling back to the countdown.
+    private static let triesFromShowing = 3
+    /// Countdown frames to try if none of the earlier ones was recognised.
+    private static let countdownRetries: [Double] = [3, 8]
 
     func setAuto(_ on: Bool, auction: @escaping () -> WindowModel?, claimDesk: @escaping () -> WindowModel?) {
         watcher?.cancel()
@@ -68,23 +74,27 @@ final class LiveCapture: ObservableObject {
         guard on else { return }
         watcher = Task { [weak self] in
             var seen: Int?
-            var misses = 0
+            var showing: [Data] = []                 // frames with no lot number on screen
             var lotTask: Task<Void, Never>?
             while !Task.isCancelled {
                 guard let self else { return }
                 if let a = auction(), let c = claimDesk(),
                    let image = await WebViewStore.shared.fullSnapshot(a.id) {
                     if let lot = await Self.readLotNumber(image) {
-                        misses = 0
-                        self.watching = "watching · lot \(lot) on screen"
+                        self.watching = "lot \(lot) counting down"
                         if lot != seen {
                             seen = lot
+                            let frames = Array(showing.reversed())   // newest first
+                            showing = []
                             lotTask?.cancel()
-                            lotTask = Task { await self.captureLot(lot, auction: a, claimDesk: c) }
+                            lotTask = Task { await self.captureLot(lot, showing: frames, auction: a, claimDesk: c) }
                         }
                     } else {
-                        misses += 1
-                        if misses >= 4 { self.watching = "watching · no lot number on screen" }
+                        if let jpeg = image.jpegData(compressionQuality: 0.85) {
+                            showing.append(jpeg)
+                            if showing.count > Self.keepFrames { showing.removeFirst() }
+                        }
+                        self.watching = "card on show · waiting for the lot number"
                     }
                 } else {
                     self.watching = "open the auction and ClaimDesk windows"
@@ -95,17 +105,24 @@ final class LiveCapture: ObservableObject {
         }
     }
 
-    /// One lot: picture it after the first delay, and again at the later ones
-    /// while the index has not recognised it. Each retry replaces the same lot.
-    private func captureLot(_ lot: Int, auction: WindowModel, claimDesk: WindowModel) async {
+    /// One lot: try the frames from while the card was being shown, newest
+    /// first, then a couple from the countdown, stopping once ClaimDesk
+    /// recognises the card. Every try replaces the same lot's picture.
+    private func captureLot(_ lot: Int, showing: [Data], auction: WindowModel, claimDesk: WindowModel) async {
+        // Spread the tries across the showing phase rather than three
+        // near-identical frames from its last few seconds.
+        let step = max(1, showing.count / Self.triesFromShowing)
+        for jpeg in stride(from: 0, to: showing.count, by: step).prefix(Self.triesFromShowing).map({ showing[$0] }) {
+            if Task.isCancelled { return }
+            if await send(jpeg, lot: lot, fromScreen: true, claimDesk: claimDesk) { return }
+        }
         var elapsed: Double = 0
-        for at in Self.attempts {
+        for at in Self.countdownRetries {
             try? await Task.sleep(nanoseconds: UInt64((at - elapsed) * 1_000_000_000))
             elapsed = at
             if Task.isCancelled { return }           // the next lot has started
             guard let image = await WebViewStore.shared.fullSnapshot(auction.id),
                   let jpeg = image.jpegData(compressionQuality: 0.85) else { continue }
-            // Still the same lot? If the number moved on, that lot owns the picture.
             if let now = await Self.readLotNumber(image), now != lot { return }
             if await send(jpeg, lot: lot, fromScreen: true, claimDesk: claimDesk) { return }
         }
@@ -244,7 +261,7 @@ struct LiveCapturePanel: View {
                     })) {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Auto-capture each new lot").font(.callout)
-                        Text(model.watching ?? "captures when the lot number on screen changes")
+                        Text(model.watching ?? "keeps pictures while the card is shown, files them when the lot number appears")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                 }
