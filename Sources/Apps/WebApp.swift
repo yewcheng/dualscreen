@@ -14,6 +14,11 @@ final class WebViewStore: NSObject {
     private var views: [UUID: WKWebView] = [:]
     private var cursorViews: [UUID: UIView] = [:]
 
+    private override init() {
+        super.init()
+        WKWebsiteDataStore.default().httpCookieStore.add(self)
+    }
+
     func webView(for id: UUID, initialURL: String) -> WKWebView {
         if let existing = views[id] { return existing }
 
@@ -30,8 +35,10 @@ final class WebViewStore: NSObject {
         views[id] = view
         idsByView[ObjectIdentifier(view)] = id
 
+        // Put saved logins back before the first request, or the page loads
+        // signed out and the site may overwrite the cookie we were holding.
         if let url = Self.normalised(initialURL) {
-            view.load(URLRequest(url: url))
+            CookieVault.restore { view.load(URLRequest(url: url)) }
         }
         return view
     }
@@ -220,6 +227,76 @@ extension WebViewStore: WKNavigationDelegate {
         Workspace.shared.rename(id, to: String(title.prefix(40)))
         if let url = webView.url?.absoluteString {
             Workspace.shared.setURL(id, url)
+        }
+        CookieVault.save()
+    }
+}
+
+extension WebViewStore: WKHTTPCookieStoreObserver {
+    /// Logins done by a page's own scripts set cookies without a navigation.
+    func cookiesDidChange(in cookieStore: WKHTTPCookieStore) {
+        CookieVault.save()
+    }
+}
+
+/// Keeps web logins across app restarts.
+///
+/// WKWebView already stores cookies that have an expiry date, but most sites
+/// log you in with a *session* cookie, which WebKit drops when the process
+/// ends — every 7-day SideStore refresh or swipe-away meant logging in again.
+/// This copies every cookie into the app's own sandbox and puts them back on
+/// launch.
+enum CookieVault {
+    private static var restored = false
+    private static var waiting: [() -> Void] = []
+
+    private static var fileURL: URL {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("cookies.plist")
+    }
+
+    private static var store: WKHTTPCookieStore { WKWebsiteDataStore.default().httpCookieStore }
+
+    static func save() {
+        // Saving mid-restore would overwrite the file with a partial set.
+        guard restored else { return }
+        store.getAllCookies { cookies in
+            let saved: [[String: Any]] = cookies.compactMap { cookie in
+                guard let props = cookie.properties else { return nil }
+                // Property-list keys must be strings.
+                return Dictionary(uniqueKeysWithValues: props.map { ($0.key.rawValue, $0.value) })
+            }
+            if let data = try? PropertyListSerialization.data(fromPropertyList: saved,
+                                                               format: .binary, options: 0) {
+                try? data.write(to: fileURL, options: [.atomic, .completeFileProtection])
+            }
+        }
+    }
+
+    /// Runs `then` once saved cookies are back in the store (only restores once).
+    static func restore(then: @escaping () -> Void) {
+        if restored { then(); return }
+        waiting.append(then)
+        guard waiting.count == 1 else { return }
+
+        let saved = (try? Data(contentsOf: fileURL))
+            .flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [[String: Any]] } ?? []
+        let cookies = saved.compactMap { dict in
+            HTTPCookie(properties: Dictionary(uniqueKeysWithValues:
+                dict.map { (HTTPCookiePropertyKey($0.key), $0.value) }))
+        }
+
+        let group = DispatchGroup()
+        for cookie in cookies {
+            group.enter()
+            store.setCookie(cookie) { group.leave() }
+        }
+        group.notify(queue: .main) {
+            restored = true
+            let pending = waiting
+            waiting = []
+            pending.forEach { $0() }
         }
     }
 }
