@@ -8,17 +8,23 @@ struct ControllerView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 18) {
-                    DisplayBanner()
-                    Launcher()
-                    WorkspacePreview()
-                    SnapBar()
-                    Trackpad().frame(height: 96)
-                    WindowList()
-                    InputPanel()
+            // The preview is the main way to arrange windows, so it never sits
+            // inside the ScrollView — a scroll view would eat the drags.
+            GeometryReader { geo in
+                if geo.size.width > geo.size.height {
+                    HStack(alignment: .top, spacing: 18) {
+                        WorkspacePreview()
+                            .frame(width: geo.size.width * 0.58)
+                        controls
+                    }
+                    .padding(18)
+                } else {
+                    VStack(spacing: 14) {
+                        WorkspacePreview()
+                        controls
+                    }
+                    .padding(18)
                 }
-                .padding(18)
             }
             .navigationTitle("DualScreen")
             .navigationBarTitleDisplayMode(.inline)
@@ -42,6 +48,18 @@ struct ControllerView: View {
                         Image(systemName: "ellipsis.circle")
                     }
                 }
+            }
+        }
+    }
+
+    private var controls: some View {
+        ScrollView {
+            VStack(spacing: 18) {
+                DisplayBanner()
+                Launcher()
+                SnapBar()
+                WindowList()
+                InputPanel()
             }
         }
     }
@@ -132,10 +150,15 @@ private struct Launcher: View {
 
 // MARK: - Preview
 
-/// A live miniature of the external display, rendered from the same views.
-/// Tapping a window focuses it.
+/// A live miniature of the external display, rendered from the same views, and
+/// the place windows are arranged: tap to focus, drag to move, drag the
+/// bottom-right corner to resize, double-tap to maximise.
 private struct WorkspacePreview: View {
     @EnvironmentObject private var ws: Workspace
+
+    private enum DragMode { case move, resize }
+    @State private var drag: (id: UUID, mode: DragMode)?
+    @State private var lastTranslation: CGSize = .zero
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -153,17 +176,55 @@ private struct WorkspacePreview: View {
                         .environment(\.isMirrorPreview, ws.isExternalAttached)
                         .allowsHitTesting(false)
 
-                    // Hit layer: topmost window under the tap gets focus.
+                    // Resize grips on the visible windows' bottom-right corners.
+                    ForEach(ws.windows.filter { !$0.isMinimised }) { w in
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white.opacity(w.id == ws.focusedID ? 0.9 : 0.4))
+                            .position(x: w.frame.maxX * size.width - 9,
+                                      y: w.frame.maxY * size.height - 9)
+                            .allowsHitTesting(false)
+                    }
+
+                    // Hit layer: one surface takes every gesture and works out
+                    // which window is under the finger.
                     Color.clear
                         .contentShape(Rectangle())
-                        .onTapGesture(count: 1, coordinateSpace: .local) { point in
-                            let n = CGPoint(x: point.x / size.width, y: point.y / size.height)
-                            if let hit = ws.windows
-                                .filter({ !$0.isMinimised && $0.frame.contains(n) })
-                                .max(by: { $0.z < $1.z }) {
-                                ws.focus(hit.id)
-                            }
-                        }
+                        .gesture(
+                            SpatialTapGesture(count: 2)
+                                .onEnded { e in
+                                    if let hit = hitTest(e.location, size) { ws.toggleMaximise(hit.id) }
+                                }
+                                .exclusively(before: SpatialTapGesture(count: 1)
+                                    .onEnded { e in
+                                        if let hit = hitTest(e.location, size) { ws.focus(hit.id) }
+                                    })
+                        )
+                        .simultaneousGesture(
+                            DragGesture(minimumDistance: 4)
+                                .onChanged { value in
+                                    if drag == nil {
+                                        guard let hit = hitTest(value.startLocation, size) else { return }
+                                        let f = hit.pixelFrame(in: size)
+                                        let grip: CGFloat = 32
+                                        let nearCorner = value.startLocation.x > f.maxX - grip
+                                            && value.startLocation.y > f.maxY - grip
+                                        drag = (hit.id, nearCorner ? .resize : .move)
+                                        lastTranslation = .zero
+                                        ws.focus(hit.id)
+                                    }
+                                    guard let drag else { return }
+                                    let delta = CGSize(
+                                        width: (value.translation.width - lastTranslation.width) / size.width,
+                                        height: (value.translation.height - lastTranslation.height) / size.height)
+                                    lastTranslation = value.translation
+                                    switch drag.mode {
+                                    case .move:   ws.move(drag.id, by: delta)
+                                    case .resize: ws.resize(drag.id, by: delta)
+                                    }
+                                }
+                                .onEnded { _ in drag = nil }
+                        )
                         .frame(width: size.width, height: size.height)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -171,7 +232,18 @@ private struct WorkspacePreview: View {
                     .strokeBorder(.quaternary))
             }
             .aspectRatio(ws.canvasAspect, contentMode: .fit)
+
+            Text("tap to focus · drag to move · drag ↘ corner to resize · double-tap to maximise")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
+    }
+
+    private func hitTest(_ point: CGPoint, _ size: CGSize) -> WindowModel? {
+        let n = CGPoint(x: point.x / size.width, y: point.y / size.height)
+        return ws.windows
+            .filter { !$0.isMinimised && $0.frame.contains(n) }
+            .max(by: { $0.z < $1.z })
     }
 }
 

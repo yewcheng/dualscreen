@@ -35,7 +35,7 @@ Sources/
     WorkspaceView.swift    what the monitor draws (output only)
     WindowChrome.swift     title bar + border
     ControllerView.swift   the iPad UI
-    Trackpad.swift         drag to move, pinch to resize
+
     DocumentPicker.swift   security-scoped file access
   Apps/
     AppContentView.swift   app bodies

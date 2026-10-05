@@ -254,17 +254,48 @@ struct WebBody: View {
 
     var body: some View {
         if isMirrorPreview {
-            VStack(spacing: 8) {
-                Image(systemName: "globe").font(.system(size: 26, weight: .light))
-                Text(window.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                Text("live on the monitor").font(.system(size: 11))
-            }
-            .foregroundStyle(.white.opacity(0.45))
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(12)
+            WebMirror(window: window)
         } else {
             WebViewHost(id: window.id, initialURL: window.text)
                 .background(Color.white)
+        }
+    }
+}
+
+/// The miniature's stand-in for a page that is live on the monitor: a snapshot
+/// of the real web view, refreshed about once a second.
+private struct WebMirror: View {
+    let window: WindowModel
+    @State private var shot: UIImage?
+
+    private let refresh = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        GeometryReader { geo in
+            Group {
+                if let shot {
+                    Image(uiImage: shot)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+                        .clipped()
+                } else {
+                    VStack(spacing: 8) {
+                        Image(systemName: "globe").font(.system(size: 26, weight: .light))
+                        Text(window.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                    }
+                    .foregroundStyle(.white.opacity(0.45))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .onAppear { grab(geo.size) }
+            .onReceive(refresh) { _ in grab(geo.size) }
+        }
+    }
+
+    private func grab(_ size: CGSize) {
+        WebViewStore.shared.snapshot(window.id, into: size) { image in
+            if let image { shot = image }
         }
     }
 }

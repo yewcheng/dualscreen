@@ -125,7 +125,12 @@ final class Workspace: ObservableObject {
 
     /// Move by a delta expressed in normalised workspace units.
     func move(_ id: UUID, by delta: CGSize) {
-        guard let i = index(of: id), !windows[i].isMaximised else { return }
+        guard let i = index(of: id) else { return }
+        // Dragging a maximised window un-maximises it, as on a desktop.
+        if let restore = windows[i].restoreFrame {
+            windows[i].frame = restore
+            windows[i].restoreFrame = nil
+        }
         var f = windows[i].frame
         f.origin.x = clamp(f.origin.x + delta.width, 0, 1 - f.size.width)
         f.origin.y = clamp(f.origin.y + delta.height, 0, 1 - f.size.height)
@@ -142,6 +147,17 @@ final class Workspace: ObservableObject {
         let h = clamp(f.size.height * factor, 0.10, 1)
         f.size = CGSize(width: w, height: h)
         f.origin = CGPoint(x: clamp(cx - w / 2, 0, 1 - w), y: clamp(cy - h / 2, 0, 1 - h))
+        windows[i].frame = f
+        scheduleSave()
+    }
+
+    /// Drag the bottom-right corner by a normalised delta; the top-left stays put.
+    func resize(_ id: UUID, by delta: CGSize) {
+        guard let i = index(of: id) else { return }
+        windows[i].restoreFrame = nil
+        var f = windows[i].frame
+        f.size.width = clamp(f.size.width + delta.width, 0.12, 1 - f.origin.x)
+        f.size.height = clamp(f.size.height + delta.height, 0.10, 1 - f.origin.y)
         windows[i].frame = f
         scheduleSave()
     }
