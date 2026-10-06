@@ -30,6 +30,12 @@ struct CardInfo: Identifiable {
     let currency: String
     let links: [Link]
     let imageURL: URL?
+    /// Art/mechanic tags from ClaimDesk: "ex", "Full-art supporter", "Trainer Gallery"…
+    let tags: [String]
+    let setOfficial: Int?
+    let setTotal: Int?
+    /// Each print of this card (Normal, Holo, Reverse holo…) with its own price.
+    let versions: [(label: String, price: Double?)]
     let frame: Data
     let seenAt = Date()
 
@@ -70,7 +76,21 @@ struct CardInfo: Identifiable {
             let hasExt = ["png", "jpg", "jpeg", "webp"].contains((raw as NSString).pathExtension.lowercased())
             return URL(string: hasExt ? raw : raw + "/high.png")
         }
+        tags = d["tags"] as? [String] ?? []
+        setOfficial = d["set_official"] as? Int
+        setTotal = d["set_total"] as? Int
+        versions = (d["variants"] as? [[String: Any]] ?? []).compactMap { v in
+            guard let label = v["label"] as? String else { return nil }
+            let p = v["price"] as? [String: Any]
+            return (label, (p?["local"] as? Double) ?? (p?["local"] as? Int).map(Double.init))
+        }
         self.frame = frame
+    }
+
+    /// The card's number against the set: secret rares sit past the printed count.
+    var isSecret: Bool {
+        guard let off = setOfficial, let n = Int((number ?? "").split(separator: "/").first ?? "") else { return false }
+        return n > off
     }
 }
 
@@ -109,11 +129,30 @@ struct CardInfoPanel: View {
                             .font(.callout)
                     }
 
-                    let set = [card.setNameEN ?? card.setName, card.number, card.rarity]
-                        .compactMap { $0 }.joined(separator: " · ")
-                    if !set.isEmpty { Text(set).font(.callout).foregroundStyle(.secondary) }
-                    if let a = card.illustrator {
-                        Text("Illus. \(a)").font(.caption).foregroundStyle(.secondary)
+                    // Rarity and art.
+                    let art = [card.rarity] + card.tags.map { Optional($0) }
+                    let artLine = art.compactMap { $0 }.joined(separator: " · ")
+                    if !artLine.isEmpty || card.illustrator != nil {
+                        HStack(spacing: 6) {
+                            Image(systemName: "paintpalette")
+                            Text([artLine.isEmpty ? nil : artLine,
+                                  card.illustrator.map { "art by \($0)" }]
+                                .compactMap { $0 }.joined(separator: " · "))
+                        }
+                        .font(.callout)
+                    }
+
+                    // Where it sits in the master set.
+                    HStack(spacing: 6) {
+                        Image(systemName: "square.stack.3d.up")
+                        Text(masterSetLine(card))
+                    }
+                    .font(.callout).foregroundStyle(.secondary)
+                    if !card.versions.isEmpty {
+                        Text("Printed as: " + card.versions.map { v in
+                            v.price.map { "\(v.label) \($0.formatted(.currency(code: card.currency)))" } ?? v.label
+                        }.joined(separator: " · "))
+                        .font(.caption).foregroundStyle(.secondary)
                     }
 
                     if card.prices.isEmpty {
@@ -145,6 +184,17 @@ struct CardInfoPanel: View {
             .padding(12)
             .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
+    }
+
+    private func masterSetLine(_ card: CardInfo) -> String {
+        var parts: [String] = [card.setNameEN ?? card.setName ?? "Unknown set"]
+        if let n = card.number { parts.append("#\(n)" + (card.isSecret ? " (secret)" : "")) }
+        if let total = card.setTotal, let off = card.setOfficial, total > off {
+            parts.append("master set \(total) cards (\(off) + \(total - off) secret)")
+        } else if let total = card.setTotal ?? card.setOfficial {
+            parts.append("master set \(total) cards")
+        }
+        return parts.joined(separator: " · ")
     }
 
     @ViewBuilder
