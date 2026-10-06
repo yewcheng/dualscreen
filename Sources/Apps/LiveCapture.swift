@@ -29,6 +29,43 @@ final class LiveCapture: ObservableObject {
 
     private var lastLot = 0
 
+    /// One model for the whole app: the capture panel drives it and the card
+    /// panel under the monitor view shows what it found.
+    static let shared = LiveCapture()
+
+    // MARK: - The card on show
+
+    /// The card currently being shown, identified as soon as it is on screen —
+    /// before the lot number appears — so the seller can introduce it.
+    @Published private(set) var card: CardInfo?
+    private var identifying = false
+    private var identifiedFrame: Data?
+    private var framesSinceIdentified = 0
+    /// Once a card is named, look again only every few frames, to catch the
+    /// seller swapping cards without sending every frame to ClaimDesk.
+    private static let recheckEvery = 3
+
+    private func identifyWhileShowing(_ jpeg: Data, claimDesk: WindowModel) {
+        if identifiedFrame != nil {
+            framesSinceIdentified += 1
+            guard framesSinceIdentified % Self.recheckEvery == 0 else { return }
+        }
+        guard !identifying else { return }
+        identifying = true
+        Task {
+            defer { identifying = false }
+            guard let out = try? await WebViewStore.shared.postImage(
+                claimDesk.id, path: "/api/scan/identify-frame", jpeg: jpeg),
+                  out["status"] as? String == "ok",
+                  let info = CardInfo(out, frame: jpeg) else { return }
+            if info.id != card?.id { card = info }
+            identifiedFrame = jpeg
+            framesSinceIdentified = 0
+        }
+    }
+
+    func clearCard() { card = nil }
+
     /// Shows run past midnight; like ClaimDesk, anything before 6am belongs
     /// to the previous day's show.
     static func showDate(_ now: Date = Date()) -> String {
@@ -84,7 +121,12 @@ final class LiveCapture: ObservableObject {
                         self.watching = "lot \(lot) counting down"
                         if lot != seen {
                             seen = lot
-                            let frames = Array(showing.reversed())   // newest first
+                            // The frame that identified the card goes first: it is
+                            // known to be readable.
+                            var frames = Array(showing.reversed())   // newest first
+                            if let best = self.identifiedFrame { frames.insert(best, at: 0) }
+                            self.identifiedFrame = nil
+                            self.framesSinceIdentified = 0
                             showing = []
                             lotTask?.cancel()
                             lotTask = Task { await self.captureLot(lot, showing: frames, auction: a, claimDesk: c) }
@@ -93,6 +135,7 @@ final class LiveCapture: ObservableObject {
                         if let jpeg = image.jpegData(compressionQuality: 0.85) {
                             showing.append(jpeg)
                             if showing.count > Self.keepFrames { showing.removeFirst() }
+                            self.identifyWhileShowing(jpeg, claimDesk: c)
                         }
                         self.watching = WebViewStore.shared.videoBlocked
                             ? "can't copy the stream's video — tell Claude"
@@ -217,7 +260,7 @@ final class LiveCapture: ObservableObject {
 /// and what each capture was recorded as.
 struct LiveCapturePanel: View {
     @EnvironmentObject private var ws: Workspace
-    @StateObject private var model = LiveCapture()
+    @ObservedObject private var model = LiveCapture.shared
     @State private var auctionID: UUID?
 
     private var claimDesk: WindowModel? { ws.windows.first(where: LiveCapture.isClaimDesk) }

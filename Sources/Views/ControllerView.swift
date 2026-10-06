@@ -18,7 +18,12 @@ struct ControllerView: View {
                         // empty, so the right column is short enough to see.
                         VStack(spacing: 12) {
                             WorkspacePreview()
-                            ScrollView { InputPanel() }
+                            ScrollView {
+                                VStack(spacing: 12) {
+                                    CardInfoPanel()
+                                    InputPanel()
+                                }
+                            }
                         }
                         .frame(width: geo.size.width * 0.70)
                         controls(includingInput: false)
@@ -62,6 +67,7 @@ struct ControllerView: View {
         ScrollView {
             VStack(spacing: 14) {
                 DisplayBanner()
+                if includingInput { CardInfoPanel() }
                 LiveCapturePanel()
                 Launcher()
                 SnapBar()
