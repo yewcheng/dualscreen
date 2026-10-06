@@ -249,14 +249,21 @@ struct LiveCapturePanel: View {
                         .keyboardType(.numberPad)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 96)
-                    Button {
-                        Task { await model.capture(auction: auction, claimDesk: claimDesk) }
-                    } label: {
+                }
+
+                // Its own full-width row: squeezed beside the lot box in a
+                // narrow column, the label wrapped a few letters per line.
+                Button {
+                    Task { await model.capture(auction: auction, claimDesk: claimDesk) }
+                } label: {
+                    Group {
                         if model.busy { ProgressView() } else { Label("Capture lot", systemImage: "camera.viewfinder") }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(model.busy)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
                 }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.busy)
 
                 Toggle(isOn: Binding(
                     get: { model.auto },
