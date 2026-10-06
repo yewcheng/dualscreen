@@ -118,12 +118,36 @@ final class WebViewStore: NSObject {
           el.dispatchEvent(new MouseEvent('mouseup', opts));
           if (typeof target.click === 'function') { target.click(); }
           else { el.dispatchEvent(new MouseEvent('click', opts)); }
-          return target.tagName;
+          // Did that land in somewhere to type? The controller opens the iPad
+          // keyboard for it, starting from what the field already holds.
+          var f = document.activeElement;
+          var textTypes = ['text', 'search', 'email', 'url', 'tel', 'password', 'number', ''];
+          var editable = f && ((f.tagName === 'INPUT' && textTypes.indexOf((f.type || '').toLowerCase()) >= 0)
+                               || f.tagName === 'TEXTAREA' || f.isContentEditable);
+          return JSON.stringify({ editable: !!editable,
+                                  value: editable ? (f.isContentEditable ? f.innerText : f.value) || '' : '',
+                                  secret: !!(editable && f.type === 'password') });
         })();
         """
-        view.evaluateJavaScript(js)
+        view.evaluateJavaScript(js) { [weak self] result, _ in
+            guard let text = result as? String,
+                  let info = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
+                  info["editable"] as? Bool == true else { return }
+            self?.fieldTapped.send(FieldTap(window: id,
+                                            value: info["value"] as? String ?? "",
+                                            secret: info["secret"] as? Bool ?? false))
+        }
         notifySoon(id)
     }
+
+    struct FieldTap {
+        let window: UUID
+        let value: String
+        let secret: Bool
+    }
+
+    /// Fires when a click lands in a text field, so the controller can raise the keyboard.
+    let fieldTapped = PassthroughSubject<FieldTap, Never>()
 
     /// Type into whatever the last click focused.
     func type(_ id: UUID, _ text: String) {
@@ -136,6 +160,11 @@ final class WebViewStore: NSObject {
         (function() {
           var el = document.activeElement;
           if (!el) { return 'none'; }
+          if (el.isContentEditable) {
+            el.innerText = "\(escaped)";
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            return 'ok';
+          }
           var setter = Object.getOwnPropertyDescriptor(el.__proto__, 'value');
           if (setter && setter.set) { setter.set.call(el, "\(escaped)"); }
           else { el.value = "\(escaped)"; }
@@ -461,7 +490,9 @@ struct WebControls: View {
 
     @State private var address: String = ""
     @State private var typing: String = ""
+    @State private var secret = false
     @FocusState private var addressFocused: Bool
+    @FocusState private var typingFocused: Bool
 
     private static let bookmarks: [(String, String, String)] = [
         ("Croissant TCG", "https://timetocook.tail947b31.ts.net/", "crown"),
@@ -500,23 +531,47 @@ struct WebControls: View {
                 Spacer()
             }
 
+            // Tapping a text field in the page focuses this box, which raises
+            // the iPad keyboard; every keystroke is copied into the page field.
             HStack(spacing: 8) {
-                TextField("type into the focused field", text: $typing)
-                    .textFieldStyle(.roundedBorder)
-                    .autocorrectionDisabled()
-                Button("Send") {
-                    WebViewStore.shared.type(window.id, typing)
+                Group {
+                    if secret {
+                        SecureField("tap a text box in the page to type", text: $typing)
+                    } else {
+                        TextField("tap a text box in the page to type", text: $typing)
+                    }
                 }
-                Button("Enter") {
-                    WebViewStore.shared.type(window.id, typing)
-                    WebViewStore.shared.submit(window.id)
-                    typing = ""
+                .textFieldStyle(.roundedBorder)
+                .autocorrectionDisabled()
+                .focused($typingFocused)
+                .submitLabel(.go)
+                .onSubmit(enter)
+                .onChange(of: typing) { text in
+                    if typingFocused { WebViewStore.shared.type(window.id, text) }
+                }
+                Button("Enter", action: enter)
+                if typingFocused {
+                    Button("Done") { typingFocused = false }
                 }
             }
             .buttonStyle(.bordered)
         }
         .onAppear { address = window.text }
         .onChange(of: window.id) { _ in address = ws.focused?.text ?? "" }
+        .onReceive(WebViewStore.shared.fieldTapped.receive(on: RunLoop.main)) { tap in
+            guard tap.window == window.id else { return }
+            typingFocused = false          // set the text before focusing, so it isn't echoed back
+            secret = tap.secret
+            typing = tap.value
+            DispatchQueue.main.async { typingFocused = true }
+        }
+    }
+
+    private func enter() {
+        WebViewStore.shared.type(window.id, typing)
+        WebViewStore.shared.submit(window.id)
+        typing = ""
+        typingFocused = false
     }
 
     private func go() {

@@ -13,15 +13,21 @@ struct ControllerView: View {
             GeometryReader { geo in
                 if geo.size.width > geo.size.height {
                     HStack(alignment: .top, spacing: 18) {
-                        WorkspacePreview()
-                            .frame(width: geo.size.width * 0.70)
-                        controls
+                        // The focused window's input (address bar, typing,
+                        // keypad) goes under the view, in the space that was
+                        // empty, so the right column is short enough to see.
+                        VStack(spacing: 12) {
+                            WorkspacePreview()
+                            ScrollView { InputPanel() }
+                        }
+                        .frame(width: geo.size.width * 0.70)
+                        controls(includingInput: false)
                     }
                     .padding(18)
                 } else {
                     VStack(spacing: 14) {
                         WorkspacePreview()
-                        controls
+                        controls(includingInput: true)
                     }
                     .padding(18)
                 }
@@ -52,15 +58,15 @@ struct ControllerView: View {
         }
     }
 
-    private var controls: some View {
+    private func controls(includingInput: Bool) -> some View {
         ScrollView {
-            VStack(spacing: 18) {
+            VStack(spacing: 14) {
                 DisplayBanner()
                 LiveCapturePanel()
                 Launcher()
                 SnapBar()
                 WindowList()
-                InputPanel()
+                if includingInput { InputPanel() }
             }
         }
     }
@@ -102,7 +108,7 @@ private struct DisplayBanner: View {
 private struct Launcher: View {
     @EnvironmentObject private var ws: Workspace
 
-    private let columns = [GridItem(.adaptive(minimum: 92), spacing: 10)]
+    private let columns = [GridItem(.adaptive(minimum: 84), spacing: 8)]
 
     /// The two sites get their own tiles so they open straight onto the right
     /// page instead of a generic web window someone has to type an address into.
@@ -138,7 +144,7 @@ private struct Launcher: View {
                             Text(item.title).font(.caption)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, 8)
                         .background(item.kind.accent.opacity(0.18),
                                     in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
