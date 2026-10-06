@@ -250,20 +250,105 @@ final class WebViewStore: NSObject {
 
     /// A picture of the page, so the controller can show what is being pointed at.
     func snapshot(_ id: UUID, into size: CGSize, completion: @escaping (UIImage?) -> Void) {
-        guard let view = views[id], view.bounds.width > 0 else { completion(nil); return }
-        let config = WKSnapshotConfiguration()
-        config.snapshotWidth = NSNumber(value: Double(size.width))
-        view.takeSnapshot(with: config) { image, _ in completion(image) }
+        Task { @MainActor in
+            completion(await self.composite(id, width: size.width * UIScreen.main.scale))
+        }
     }
 
     /// The page at full size, for reading and recording rather than previewing.
     @MainActor
     func fullSnapshot(_ id: UUID) async -> UIImage? {
+        await composite(id, width: nil)
+    }
+
+    /// A picture of the page WITH its playing video.
+    ///
+    /// takeSnapshot leaves <video> blank — the video is decoded straight to the
+    /// screen, outside what WebKit can photograph — so a live stream showed as
+    /// an empty box on the iPad and gave capture nothing to read. The current
+    /// frame of each visible video is drawn to a canvas inside the page and
+    /// painted back over the snapshot where the video sits.
+    @MainActor
+    private func composite(_ id: UUID, width: CGFloat?) async -> UIImage? {
         guard let view = views[id], view.bounds.width > 0 else { return nil }
-        return await withCheckedContinuation { done in
-            view.takeSnapshot(with: nil) { image, _ in done.resume(returning: image) }
+        let config = WKSnapshotConfiguration()
+        if let width { config.snapshotWidth = NSNumber(value: Double(width / UIScreen.main.scale)) }
+        guard let page: UIImage = await withCheckedContinuation({ done in
+            view.takeSnapshot(with: config) { image, _ in done.resume(returning: image) }
+        }) else { return nil }
+
+        let frames = await videoFrames(view, maxWidth: width ?? 1280)
+        guard !frames.isEmpty else { return page }
+
+        let scale = page.size.width / max(view.bounds.width, 1)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = page.scale
+        return UIGraphicsImageRenderer(size: page.size, format: format).image { ctx in
+            page.draw(at: .zero)
+            for f in frames {
+                let box = CGRect(x: f.rect.minX * scale, y: f.rect.minY * scale,
+                                 width: f.rect.width * scale, height: f.rect.height * scale)
+                let img = f.image.size
+                let fit = f.cover
+                    ? max(box.width / img.width, box.height / img.height)
+                    : min(box.width / img.width, box.height / img.height)
+                let drawn = CGSize(width: img.width * fit, height: img.height * fit)
+                ctx.cgContext.saveGState()
+                ctx.cgContext.clip(to: box)
+                UIColor.black.setFill()
+                ctx.cgContext.fill(box)
+                f.image.draw(in: CGRect(x: box.midX - drawn.width / 2, y: box.midY - drawn.height / 2,
+                                        width: drawn.width, height: drawn.height))
+                ctx.cgContext.restoreGState()
+            }
         }
     }
+
+    private struct VideoFrame {
+        let image: UIImage
+        let rect: CGRect          // in the web view's points (CSS pixels)
+        let cover: Bool           // object-fit: cover, else contain
+    }
+
+    @MainActor
+    private func videoFrames(_ view: WKWebView, maxWidth: CGFloat) async -> [VideoFrame] {
+        let js = """
+        const out = [];
+        for (const v of document.querySelectorAll('video')) {
+          const r = v.getBoundingClientRect();
+          if (v.readyState < 2 || !v.videoWidth || r.width < 40 || r.height < 40) continue;
+          if (r.bottom < 0 || r.right < 0 || r.top > innerHeight || r.left > innerWidth) continue;
+          const k = Math.min(1, maxWidth / v.videoWidth);
+          const c = document.createElement('canvas');
+          c.width = Math.round(v.videoWidth * k);
+          c.height = Math.round(v.videoHeight * k);
+          try {
+            c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+            out.push({ x: r.left, y: r.top, w: r.width, h: r.height,
+                       cover: getComputedStyle(v).objectFit === 'cover',
+                       data: c.toDataURL('image/jpeg', 0.85).split(',')[1] });
+          } catch (e) { out.push({ error: String(e) }); }   // cross-origin video
+        }
+        return JSON.stringify(out);
+        """
+        guard let raw = try? await view.callAsyncJavaScript(
+                js, arguments: ["maxWidth": Double(maxWidth)], in: nil, contentWorld: .page) as? String,
+              let list = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [[String: Any]]
+        else { return [] }
+        videoBlocked = list.contains { $0["error"] != nil }
+        return list.compactMap { d in
+            guard let b64 = d["data"] as? String, let data = Data(base64Encoded: b64),
+                  let image = UIImage(data: data),
+                  let x = d["x"] as? Double, let y = d["y"] as? Double,
+                  let w = d["w"] as? Double, let h = d["h"] as? Double else { return nil }
+            return VideoFrame(image: image, rect: CGRect(x: x, y: y, width: w, height: h),
+                              cover: d["cover"] as? Bool ?? false)
+        }
+    }
+
+    /// True when the page's video refused to be copied (served from another
+    /// site without permission), so pictures of it will show the box blank.
+    private(set) var videoBlocked = false
 
     enum PostError: LocalizedError {
         case noWindow, notLoggedIn, server(String)

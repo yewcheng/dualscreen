@@ -94,7 +94,9 @@ final class LiveCapture: ObservableObject {
                             showing.append(jpeg)
                             if showing.count > Self.keepFrames { showing.removeFirst() }
                         }
-                        self.watching = "card on show · waiting for the lot number"
+                        self.watching = WebViewStore.shared.videoBlocked
+                            ? "can't copy the stream's video — tell Claude"
+                            : "card on show · waiting for the lot number"
                     }
                 } else {
                     self.watching = "open the auction and ClaimDesk windows"
