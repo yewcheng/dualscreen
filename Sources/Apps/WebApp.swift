@@ -366,6 +366,27 @@ final class WebViewStore: NSObject {
     @MainActor
     func postImage(_ id: UUID, path: String, jpeg: Data) async throws -> [String: Any] {
         guard let view = views[id] else { throw PostError.noWindow }
+        do {
+            return try await post(view, path: path, jpeg: jpeg)
+        } catch let error as PostError {
+            throw error
+        } catch {
+            // A page hidden behind another window can have its web process
+            // shut down by iPadOS, leaving an empty shell that can't run fetch.
+            // Bring the page back and try once more.
+            await revive(view)
+            do {
+                return try await post(view, path: path, jpeg: jpeg)
+            } catch let error as PostError {
+                throw error
+            } catch {
+                throw PostError.server("ClaimDesk window not responding: " + Self.jsMessage(error))
+            }
+        }
+    }
+
+    @MainActor
+    private func post(_ view: WKWebView, path: String, jpeg: Data) async throws -> [String: Any] {
         let js = """
         const bytes = Uint8Array.from(atob(img), c => c.charCodeAt(0));
         const r = await fetch(path, { method: 'POST', credentials: 'same-origin',
@@ -389,6 +410,28 @@ final class WebViewStore: NSObject {
         return json
     }
 
+    /// Reload a page whose content died, and wait (up to 15s) for it to load.
+    @MainActor
+    private func revive(_ view: WKWebView) async {
+        if let id = idsByView[ObjectIdentifier(view)], view.url == nil || view.url?.scheme == "about",
+           let w = Workspace.shared.windows.first(where: { $0.id == id }),
+           let url = Self.normalised(w.text) {
+            view.load(URLRequest(url: url))
+        } else {
+            view.reload()
+        }
+        for _ in 0..<30 {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            if !view.isLoading && view.url != nil { break }
+        }
+    }
+
+    /// The message inside a WebKit "A JavaScript exception occurred" error.
+    static func jsMessage(_ error: Error) -> String {
+        let info = (error as NSError).userInfo
+        return (info["WKJavaScriptExceptionMessage"] as? String) ?? error.localizedDescription
+    }
+
     /// Accepts "carousell.sg" as readily as a full URL.
     static func normalised(_ raw: String) -> URL? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -405,6 +448,12 @@ final class WebViewStore: NSObject {
 }
 
 extension WebViewStore: WKNavigationDelegate {
+    /// iPadOS can stop a page's web process (memory, or long out of sight).
+    /// Reload it straight away so it is ready the next time it is needed.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        webView.reload()
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard let id = idsByView[ObjectIdentifier(webView)] else { return }
         let title = webView.title?.isEmpty == false
