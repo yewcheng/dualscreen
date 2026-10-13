@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 /// Everything ClaimDesk knows about the card on show, from /api/scan/identify-frame.
 struct CardInfo: Identifiable {
@@ -94,6 +95,17 @@ struct CardInfo: Identifiable {
     }
 }
 
+extension CardInfo {
+    /// PriceCharting's search for this card; it lists the graded and ungraded
+    /// prices. Opened as a page rather than fetched, because PriceCharting
+    /// blocks scripted requests.
+    var priceChartingURL: String? {
+        let q = [nameEN ?? name, setNameEN ?? setName, number].compactMap { $0 }.joined(separator: " ")
+        guard let enc = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return nil }
+        return "https://www.pricecharting.com/search-products?type=prices&q=" + enc
+    }
+}
+
 /// The card on show, big enough to read while talking: picture, name, what it
 /// is, where it is from, and what it is worth.
 struct CardInfoPanel: View {
@@ -155,6 +167,8 @@ struct CardInfoPanel: View {
                         .font(.caption).foregroundStyle(.secondary)
                     }
 
+                    PriceChartingRow(card: card)
+
                     if card.prices.isEmpty {
                         Text("No market price listed — check the links")
                             .font(.caption).foregroundStyle(.secondary)
@@ -170,8 +184,13 @@ struct CardInfoPanel: View {
                         }
                     }
 
-                    if !card.links.isEmpty {
+                    if !card.links.isEmpty || card.priceChartingURL != nil {
                         HStack(spacing: 6) {
+                            if let url = card.priceChartingURL {
+                                Button("PriceCharting") { ws.open(.web, url: url, title: "PriceCharting") }
+                                    .font(.caption)
+                                    .buttonStyle(.borderedProminent)
+                            }
                             ForEach(card.links) { l in
                                 Button(l.label) { ws.open(.web, url: l.url, title: l.label) }
                                     .font(.caption)
@@ -216,6 +235,104 @@ struct CardInfoPanel: View {
             Image(uiImage: ui).resizable().scaledToFill()
         } else {
             Color.secondary.opacity(0.2)
+        }
+    }
+}
+
+/// PriceCharting's prices for the card, read off its own page.
+///
+/// PriceCharting turns away scripted requests (Cloudflare), so ClaimDesk can't
+/// fetch them; a real web view on the iPad gets the page. The search is loaded
+/// in an off-screen web view and the price cells are read once they render.
+@MainActor
+final class PriceChartingLookup: NSObject, ObservableObject {
+    struct Prices {
+        let title: String?
+        let ungraded: String?
+        let grade9: String?
+        let psa10: String?
+    }
+
+    static let shared = PriceChartingLookup()
+
+    @Published private(set) var prices: [String: Prices] = [:]   // by card id
+    @Published private(set) var failed: Set<String> = []
+    private let web = WKWebView(frame: CGRect(x: 0, y: 0, width: 1024, height: 768))
+    private var current: String?
+
+    /// A product page has #used_price etc.; a search page lists products in
+    /// #games_table with the same columns (Ungraded, Grade 9, PSA 10).
+    private static let read = """
+    (() => {
+      const t = (root, s) => { const e = root.querySelector(s); return e ? e.textContent.replace(/\\s+/g, ' ').trim() : null; };
+      if (document.querySelector('#used_price')) {
+        return JSON.stringify({ title: t(document, '#product_name'),
+          ungraded: t(document, '#used_price .price'), grade9: t(document, '#graded_price .price'),
+          psa10: t(document, '#manual_only_price .price') });
+      }
+      const row = document.querySelector('#games_table tbody tr');
+      if (row) {
+        return JSON.stringify({ title: t(row, 'td.title a'), ungraded: t(row, 'td.used_price'),
+          grade9: t(row, 'td.cib_price'), psa10: t(row, 'td.new_price') });
+      }
+      return null;
+    })()
+    """
+
+    func fetch(_ card: CardInfo) async {
+        guard prices[card.id] == nil, !failed.contains(card.id),
+              let raw = card.priceChartingURL, let url = URL(string: raw) else { return }
+        current = card.id
+        web.load(URLRequest(url: url))
+        // Cloudflare may show a check page first; give the real page up to 20s.
+        for _ in 0..<40 {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard current == card.id else { return }          // a newer card took over
+            if let json = try? await web.evaluateJavaScript(Self.read) as? String,
+               let d = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] {
+                prices[card.id] = Prices(title: d["title"] as? String, ungraded: d["ungraded"] as? String,
+                                         grade9: d["grade9"] as? String, psa10: d["psa10"] as? String)
+                return
+            }
+        }
+        failed.insert(card.id)
+    }
+}
+
+/// Ungraded · Grade 9 · PSA 10 from PriceCharting, in its own currency (USD).
+private struct PriceChartingRow: View {
+    let card: CardInfo
+    @ObservedObject private var lookup = PriceChartingLookup.shared
+
+    var body: some View {
+        Group {
+            if let p = lookup.prices[card.id] {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 14) {
+                        cell(p.ungraded, "Ungraded")
+                        cell(p.grade9, "Grade 9")
+                        cell(p.psa10, "PSA 10")
+                    }
+                    if let title = p.title {
+                        Text("PriceCharting · \(title)").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
+            } else if lookup.failed.contains(card.id) {
+                Text("PriceCharting: no match found").font(.caption).foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("PriceCharting…").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .task(id: card.id) { await lookup.fetch(card) }
+    }
+
+    private func cell(_ value: String?, _ label: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(value ?? "–").font(.headline.monospacedDigit())
+            Text(label).font(.caption2).foregroundStyle(.secondary)
         }
     }
 }
