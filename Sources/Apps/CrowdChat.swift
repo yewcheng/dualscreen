@@ -71,7 +71,10 @@ final class CrowdChat: ObservableObject {
 
     /// A chat row as the page shows it: name on the first line and the message
     /// below, or "name: message" on one line.
-    static func split(_ lines: [String]) -> (String, String)? {
+    static func split(_ raw: [String]) -> (String, String)? {
+        // Carousell puts a "2 purchases" badge and a "05:36 PM" stamp in each row.
+        let lines = raw.filter { $0.range(of: #"^(\d+ purchases?|\d{1,2}:\d{2}\s?[AP]M)$"#,
+                                          options: [.regularExpression, .caseInsensitive]) == nil }
         if lines.count >= 2 { return (lines[0], lines.dropFirst().joined(separator: " ")) }
         guard let line = lines.first, let colon = line.firstIndex(of: ":") else { return nil }
         let user = line[..<colon].trimmingCharacters(in: .whitespaces)
@@ -103,6 +106,7 @@ final class CrowdChat: ObservableObject {
         assert(split(["ash", "lf moonbreon"])! == ("ash", "lf moonbreon"))
         assert(split(["misty: any 151 SARs?"])! == ("misty", "any 151 SARs?"))
         assert(split(["hello"]) == nil)
+        assert(split(["plopman", "2 purchases", "i bought another", "05:36 PM"])! == ("plopman", "i bought another"))
         assert(isRequest("Any Terastal Festival?"))
         assert(isRequest("LF charizard ex"))
         assert(!isRequest("nice pull"))
@@ -112,16 +116,19 @@ final class CrowdChat: ObservableObject {
 
 extension WebViewStore {
     /// The last chat rows on the page, each as its visible lines.
-    /// shortcut: guesses the chat list as the chat/comment/message-classed element
-    /// with the most children, in the top frame only; pin a real selector once
-    /// checked against a live Carousell show.
+    /// Carousell Live's class names are hashed, so this finds the "Chat & activities"
+    /// heading and takes the element under it with the most children as the list.
     @MainActor
     func chatRows(_ id: UUID) async -> [[String]]? {
         let js = """
         let best = null, n = 0;
-        document.querySelectorAll('[class*="chat" i],[class*="comment" i],[class*="message" i]').forEach(el => {
-          if (el.children.length > n) { best = el; n = el.children.length; }
-        });
+        const head = [...document.querySelectorAll('body *')].find(e =>
+          e.children.length === 0 && /^chat\\s*&\\s*activit/i.test(e.textContent.trim()));
+        for (let root = head?.parentElement, up = 0; root && !best && up < 8; root = root.parentElement, up++) {
+          root.querySelectorAll('*').forEach(el => {
+            if (el.children.length >= 3 && el.children.length > n) { best = el; n = el.children.length; }
+          });
+        }
         if (!best) return '[]';
         return JSON.stringify([...best.children].slice(-60).map(r =>
           r.innerText.split('\\n').map(s => s.trim()).filter(Boolean)));

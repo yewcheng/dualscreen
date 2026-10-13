@@ -291,8 +291,8 @@ struct LiveCapturePanel: View {
                         Label(auction.title, systemImage: "globe")
                             .font(.footnote).lineLimit(1)
                     }
-                    Button { ws.focus(auction.id) } label: { Label("Front", systemImage: "rectangle.stack.badge.play") }
-                        .buttonStyle(.bordered)
+                    Button { ws.focus(auction.id) } label: { Label("Front", systemImage: "rectangle.stack.badge.play").lineLimit(1) }
+                        .buttonStyle(.bordered).fixedSize()
                     Spacer()
                     TextField("Lot (auto)", text: $model.manualLot)
                         .keyboardType(.numberPad)
