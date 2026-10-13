@@ -268,7 +268,9 @@ struct LiveCapturePanel: View {
         ws.windows.filter { $0.kind == .web && !LiveCapture.isClaimDesk($0) }
     }
     private var auction: WindowModel? {
-        auctions.first { $0.id == auctionID } ?? auctions.first
+        auctions.first { $0.id == auctionID }
+            ?? auctions.first { $0.text.contains("carousell") }   // not a PriceCharting tab opened later
+            ?? auctions.first
     }
 
     var body: some View {
@@ -289,6 +291,8 @@ struct LiveCapturePanel: View {
                         Label(auction.title, systemImage: "globe")
                             .font(.footnote).lineLimit(1)
                     }
+                    Button { ws.focus(auction.id) } label: { Label("Front", systemImage: "rectangle.stack.badge.play") }
+                        .buttonStyle(.bordered)
                     Spacer()
                     TextField("Lot (auto)", text: $model.manualLot)
                         .keyboardType(.numberPad)
@@ -321,6 +325,9 @@ struct LiveCapturePanel: View {
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                 }
+
+                CrowdControls()
+                    .onAppear { CrowdChat.shared.auction = { self.auction } }
 
                 if let error = model.error {
                     Text(error).font(.caption).foregroundStyle(.orange)

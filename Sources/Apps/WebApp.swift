@@ -361,6 +361,13 @@ final class WebViewStore: NSObject {
         }
     }
 
+    /// Run an async JS body in window `id`'s page; nil if there is no such window.
+    @MainActor
+    func callAsyncJavaScript(_ id: UUID, _ js: String) async throws -> Any? {
+        guard let view = views[id] else { return nil }
+        return try await view.callAsyncJavaScript(js, arguments: [:], in: nil, contentWorld: .page)
+    }
+
     /// POST a JPEG from inside the page in window `id`, so the request carries
     /// that page's own login cookie. Returns the decoded JSON reply.
     @MainActor

@@ -4,6 +4,7 @@ import SwiftUI
 /// live here, because this scene never receives events.
 struct WorkspaceView: View {
     @EnvironmentObject private var ws: Workspace
+    @ObservedObject private var crowd = CrowdChat.shared
 
     var body: some View {
         GeometryReader { geo in
@@ -21,6 +22,13 @@ struct WorkspaceView: View {
                     .frame(width: max(frame.width, 1), height: max(frame.height, 1))
                     .offset(x: frame.minX, y: frame.minY)
                     .animation(.interactiveSpring(response: 0.28, dampingFraction: 0.85), value: frame)
+                }
+
+                if crowd.showPanel {
+                    let area = Self.windowArea(in: geo.size)
+                    CrowdPanel()
+                        .frame(width: geo.size.width - area.width, height: area.height)
+                        .offset(x: area.width)
                 }
 
                 StatusBar(size: geo.size)
@@ -48,8 +56,10 @@ struct WorkspaceView: View {
 
     /// The part of the display windows live in: everything above the status
     /// bar, so no window's bottom edge ever hides behind it.
+    @MainActor
     static func windowArea(in size: CGSize) -> CGRect {
-        CGRect(x: 0, y: 0, width: size.width,
+        // The crowd panel takes the right 30%; windows keep their fractions of what's left.
+        CGRect(x: 0, y: 0, width: size.width * (CrowdChat.shared.showPanel ? 0.7 : 1),
                height: size.height - StatusBar.height * chromeScale(size))
     }
 }
