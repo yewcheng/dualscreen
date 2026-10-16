@@ -132,7 +132,9 @@ final class LiveCapture: ObservableObject {
                             lotTask = Task { await self.captureLot(lot, showing: frames, auction: a, claimDesk: c) }
                         }
                     } else {
-                        if let jpeg = image.jpegData(compressionQuality: 0.85) {
+                        // The matcher gets the video alone: the whole page shrank the card too far to match.
+                        let card = await WebViewStore.shared.videoSnapshot(a.id) ?? image
+                        if let jpeg = card.jpegData(compressionQuality: 0.85) {
                             showing.append(jpeg)
                             if showing.count > Self.keepFrames { showing.removeFirst() }
                             self.identifyWhileShowing(jpeg, claimDesk: c)
@@ -167,7 +169,8 @@ final class LiveCapture: ObservableObject {
             elapsed = at
             if Task.isCancelled { return }           // the next lot has started
             guard let image = await WebViewStore.shared.fullSnapshot(auction.id),
-                  let jpeg = image.jpegData(compressionQuality: 0.85) else { continue }
+                  let jpeg = (await WebViewStore.shared.videoSnapshot(auction.id) ?? image)
+                      .jpegData(compressionQuality: 0.85) else { continue }
             if let now = await Self.readLotNumber(image), now != lot { return }
             if await send(jpeg, lot: lot, fromScreen: true, claimDesk: claimDesk) { return }
         }
@@ -181,7 +184,8 @@ final class LiveCapture: ObservableObject {
         defer { busy = false }
 
         guard let image = await WebViewStore.shared.fullSnapshot(auction.id),
-              let jpeg = image.jpegData(compressionQuality: 0.85) else {
+              let jpeg = (await WebViewStore.shared.videoSnapshot(auction.id) ?? image)
+                  .jpegData(compressionQuality: 0.85) else {
             error = "Couldn't take a picture of the auction window."
             return
         }
