@@ -37,7 +37,7 @@ struct ControllerView: View {
                     .padding(18)
                 }
             }
-            .navigationTitle("DualScreen (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
+            .navigationTitle("DualScreen \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
