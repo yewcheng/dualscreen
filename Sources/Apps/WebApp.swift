@@ -304,6 +304,15 @@ final class WebViewStore: NSObject {
         }
     }
 
+    /// Just the largest playing video's current frame, without the page around
+    /// it — what the card matcher needs; nil when there is no copyable video.
+    @MainActor
+    func videoSnapshot(_ id: UUID) async -> UIImage? {
+        guard let view = views[id] else { return nil }
+        return await videoFrames(view, maxWidth: 1920)
+            .max { $0.rect.width * $0.rect.height < $1.rect.width * $1.rect.height }?.image
+    }
+
     private struct VideoFrame {
         let image: UIImage
         let rect: CGRect          // in the web view's points (CSS pixels)
