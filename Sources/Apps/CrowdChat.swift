@@ -43,9 +43,13 @@ final class CrowdChat: ObservableObject {
         poller = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
-                if let a = self.auction(), let rows = await WebViewStore.shared.chatRows(a.id) {
-                    self.status = rows.isEmpty ? "no chat found in \(a.title)" : nil
-                    self.take(rows)
+                if let a = self.auction() {
+                    if let rows = await WebViewStore.shared.chatRows(a.id) {
+                        self.status = rows.isEmpty ? "no chat found in \(a.title)" : nil
+                        self.take(rows)
+                    } else {
+                        self.status = "couldn't read \(a.title) — reload it"
+                    }
                 } else {
                     self.status = "open the auction window"
                 }
@@ -116,22 +120,41 @@ final class CrowdChat: ObservableObject {
 
 extension WebViewStore {
     /// The last chat rows on the page, each as its visible lines.
-    /// Carousell Live's class names are hashed, so this finds the "Chat & activities"
-    /// heading and takes the element under it with the most children as the list.
+    /// Carousell Live's class names are hashed, so every element is scored as a
+    /// possible message list: many short text rows, scrollable, and close to the
+    /// "Chat & activities" heading or the comment box. The first version took
+    /// the widest element next to the heading, which was often the tab bar or the
+    /// video's buttons rather than the chat, so no comments ever came through.
     @MainActor
     func chatRows(_ id: UUID) async -> [[String]]? {
         let js = """
-        let best = null, n = 0;
-        const head = [...document.querySelectorAll('body *')].find(e =>
-          e.children.length === 0 && /^chat\\s*&\\s*activit/i.test(e.textContent.trim()));
-        for (let root = head?.parentElement, up = 0; root && !best && up < 8; root = root.parentElement, up++) {
-          root.querySelectorAll('*').forEach(el => {
-            if (el.children.length >= 3 && el.children.length > n) { best = el; n = el.children.length; }
-          });
+        const leaves = [...document.querySelectorAll('body *')].filter(e => e.children.length === 0);
+        const head = leaves.find(e => /^chat\\s*(&|and)\\s*activit/i.test(e.textContent.trim()))
+          || leaves.find(e => /^(live\\s*)?chat$/i.test(e.textContent.trim()));
+        const box = [...document.querySelectorAll('textarea, input[type=text], input:not([type]), [contenteditable=true]')]
+          .find(e => /say|chat|comment|message/i.test((e.placeholder || e.getAttribute('aria-label') || '')));
+        const near = (el, anchor) => {
+          if (!anchor) return 0;
+          for (let a = anchor, up = 0; a && up < 8; a = a.parentElement, up++) if (a.contains(el)) return 8 - up;
+          return 0;
+        };
+        let best = null, top = 0;
+        for (const el of document.querySelectorAll('body *')) {
+          const kids = [...el.children];
+          if (kids.length < 3 || !el.getClientRects().length) continue;
+          const rows = kids.filter(k => {
+            const t = (k.innerText || '').trim();
+            return t && t.length < 400 && t.split('\\n').length <= 8;
+          }).length;
+          if (rows < 3 || rows < kids.length * 0.6) continue;
+          const st = getComputedStyle(el);
+          const scrolls = /(auto|scroll)/.test(st.overflowY) || /(auto|scroll)/.test(getComputedStyle(el.parentElement || el).overflowY);
+          const score = rows * (scrolls ? 3 : 1) * (1 + near(el, head) + near(el, box));
+          if (score > top) { best = el; top = score; }
         }
         if (!best) return '[]';
         return JSON.stringify([...best.children].slice(-60).map(r =>
-          r.innerText.split('\\n').map(s => s.trim()).filter(Boolean)));
+          (r.innerText || '').split('\\n').map(s => s.trim()).filter(Boolean)).filter(l => l.length));
         """
         guard let raw = try? await callAsyncJavaScript(id, js) as? String else { return nil }
         return (try? JSONSerialization.jsonObject(with: Data(raw.utf8))) as? [[String]]
