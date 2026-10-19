@@ -313,6 +313,23 @@ final class WebViewStore: NSObject {
             .max { $0.rect.width * $0.rect.height < $1.rect.width * $1.rect.height }?.image
     }
 
+    /// The page cropped to the stream's video box, overlays included — where
+    /// Carousell prints the lot number. Reading the whole page also read the
+    /// chat, so a comment like "#25 pls" was taken for a new lot.
+    @MainActor
+    func streamSnapshot(_ id: UUID) async -> UIImage? {
+        guard let view = views[id], let page = await composite(id, width: nil) else { return nil }
+        guard let video = await videoFrames(view, maxWidth: 320)
+                .max(by: { $0.rect.width * $0.rect.height < $1.rect.width * $1.rect.height }),
+              let cg = page.cgImage else { return page }
+        let k = CGFloat(cg.width) / max(view.bounds.width, 1)
+        let box = CGRect(x: video.rect.minX * k, y: video.rect.minY * k,
+                         width: video.rect.width * k, height: video.rect.height * k)
+            .intersection(CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+        guard !box.isEmpty, let cut = cg.cropping(to: box.integral) else { return page }
+        return UIImage(cgImage: cut)
+    }
+
     private struct VideoFrame {
         let image: UIImage
         let rect: CGRect          // in the web view's points (CSS pixels)

@@ -106,3 +106,16 @@ focused. Bookmarked: Croissant TCG (over the tailnet) and Carousell.
 This is a remote control for a page, not Safari. Hover, long-press, pinch-zoom,
 text selection and drag-and-drop inside the page are not wired up, and sites that
 depend on real pointer events may not respond to a synthetic click.
+
+## SideStore troubleshooting
+
+If SideStore fails to install or refresh DualScreen (login / "anisette" errors,
+or it hangs on signing), the fix other users have reported is resetting
+anisette data, not anything in this repo:
+
+1. SideStore → Settings → **Reset Adi.pb** (under Anisette / Debug), then
+   sign out and back in with your Apple ID.
+2. If it still fails, pick a different **Anisette server** in SideStore's
+   settings and try again.
+3. Make sure the VPN / LocalDevVPN that SideStore needs is connected before
+   refreshing.

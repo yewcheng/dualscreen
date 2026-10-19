@@ -100,9 +100,9 @@ final class LiveCapture: ObservableObject {
     /// Frames kept from the card-showing phase (about the last 15 seconds).
     private static let keepFrames = 10
     /// How many of those to try, newest first, before falling back to the countdown.
-    private static let triesFromShowing = 3
+    private static let triesFromShowing = 5
     /// Countdown frames to try if none of the earlier ones was recognised.
-    private static let countdownRetries: [Double] = [3, 8]
+    private static let countdownRetries: [Double] = [2, 5, 9]
 
     func setAuto(_ on: Bool, auction: @escaping () -> WindowModel?, claimDesk: @escaping () -> WindowModel?) {
         watcher?.cancel()
@@ -116,7 +116,7 @@ final class LiveCapture: ObservableObject {
             while !Task.isCancelled {
                 guard let self else { return }
                 if let a = auction(), let c = claimDesk(),
-                   let image = await WebViewStore.shared.fullSnapshot(a.id) {
+                   let image = await WebViewStore.shared.streamSnapshot(a.id) {
                     if let lot = await Self.readLotNumber(image) {
                         self.watching = "lot \(lot) counting down"
                         if lot != seen {
@@ -171,7 +171,8 @@ final class LiveCapture: ObservableObject {
             guard let image = await WebViewStore.shared.fullSnapshot(auction.id),
                   let jpeg = (await WebViewStore.shared.videoSnapshot(auction.id) ?? image)
                       .jpegData(compressionQuality: 0.85) else { continue }
-            if let now = await Self.readLotNumber(image), now != lot { return }
+            if let stream = await WebViewStore.shared.streamSnapshot(auction.id),
+               let now = await Self.readLotNumber(stream), now != lot { return }
             if await send(jpeg, lot: lot, fromScreen: true, claimDesk: claimDesk) { return }
         }
     }
@@ -191,7 +192,8 @@ final class LiveCapture: ObservableObject {
         }
 
         let typed = Int(manualLot.trimmingCharacters(in: .whitespaces))
-        let read = typed == nil ? await Self.readLotNumber(image) : nil
+        let stream = await WebViewStore.shared.streamSnapshot(auction.id) ?? image
+        let read = typed == nil ? await Self.readLotNumber(stream) : nil
         guard let lot = typed ?? read ?? (lastLot > 0 ? lastLot + 1 : nil) else {
             error = "Couldn't read a lot number off the screen. Type it in the Lot box."
             return
