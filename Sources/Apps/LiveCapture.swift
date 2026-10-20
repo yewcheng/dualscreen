@@ -38,6 +38,10 @@ final class LiveCapture: ObservableObject {
     /// The card currently being shown, identified as soon as it is on screen —
     /// before the lot number appears — so the seller can introduce it.
     @Published private(set) var card: CardInfo?
+    /// The last few cards named, newest first, so one shown a minute ago is a tap away.
+    @Published private(set) var recent: [CardInfo] = []
+
+    func show(_ c: CardInfo) { card = c }
     private var identifying = false
     private var identifiedFrame: Data?
     private var framesSinceIdentified = 0
@@ -58,7 +62,12 @@ final class LiveCapture: ObservableObject {
                 claimDesk.id, path: "/api/scan/identify-frame", jpeg: jpeg),
                   out["status"] as? String == "ok",
                   let info = CardInfo(out, frame: jpeg) else { return }
-            if info.id != card?.id { card = info }
+            if info.id != card?.id {
+                card = info
+                recent.removeAll { $0.id == info.id }
+                recent.insert(info, at: 0)
+                if recent.count > 8 { recent.removeLast() }
+            }
             identifiedFrame = jpeg
             framesSinceIdentified = 0
         }
