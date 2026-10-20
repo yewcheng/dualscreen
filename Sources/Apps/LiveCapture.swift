@@ -43,7 +43,7 @@ final class LiveCapture: ObservableObject {
     private var framesSinceIdentified = 0
     /// Once a card is named, look again only every few frames, to catch the
     /// seller swapping cards without sending every frame to ClaimDesk.
-    private static let recheckEvery = 3
+    private static let recheckEvery = 2
 
     private func identifyWhileShowing(_ jpeg: Data, claimDesk: WindowModel) {
         if identifiedFrame != nil {
@@ -117,6 +117,12 @@ final class LiveCapture: ObservableObject {
                 guard let self else { return }
                 if let a = auction(), let c = claimDesk(),
                    let image = await WebViewStore.shared.fullSnapshot(a.id) {
+                    // Name the card on show every poll, whatever the lot box says, so it
+                    // is known before the countdown starts. (It used to run only while no
+                    // lot number was on screen, and a number almost always is.)
+                    let video = await WebViewStore.shared.videoSnapshot(a.id) ?? image
+                    let videoJPEG = video.jpegData(compressionQuality: 0.85)
+                    if let jpeg = videoJPEG { self.identifyWhileShowing(jpeg, claimDesk: c) }
                     if let lot = await Self.readLotNumber(image) {
                         self.watching = "lot \(lot) counting down"
                         if lot != seen {
@@ -133,11 +139,9 @@ final class LiveCapture: ObservableObject {
                         }
                     } else {
                         // The matcher gets the video alone: the whole page shrank the card too far to match.
-                        let card = await WebViewStore.shared.videoSnapshot(a.id) ?? image
-                        if let jpeg = card.jpegData(compressionQuality: 0.85) {
+                        if let jpeg = videoJPEG {
                             showing.append(jpeg)
                             if showing.count > Self.keepFrames { showing.removeFirst() }
-                            self.identifyWhileShowing(jpeg, claimDesk: c)
                         }
                         self.watching = WebViewStore.shared.videoBlocked
                             ? "can't copy the stream's video — tell Claude"
