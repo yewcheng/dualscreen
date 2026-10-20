@@ -85,6 +85,14 @@ final class Workspace: ObservableObject {
         return window.id
     }
 
+    /// Point an open web window at another page (kept in the saved layout too).
+    func navigate(_ id: UUID, to url: String) {
+        guard let i = index(of: id) else { return }
+        windows[i].text = url
+        WebViewStore.shared.load(id, url)
+        scheduleSave()
+    }
+
     func close(_ id: UUID) {
         if windows.first(where: { $0.id == id })?.kind == .web {
             WebViewStore.shared.discard(id)
