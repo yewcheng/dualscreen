@@ -279,6 +279,30 @@ struct LiveCapturePanel: View {
     @EnvironmentObject private var ws: Workspace
     @ObservedObject private var model = LiveCapture.shared
     @State private var auctionID: UUID?
+    @AppStorage("showPriceyOnMonitor") private var showPricey = true
+    static let priceyFrom: Double = 100          // SGD
+    // shortcut: fixed USD->SGD rate for PriceCharting's US$ prices; read a live rate if it drifts far
+    private static let usdToSGD = 1.30
+
+    /// The card on show is worth S$100 or more: put its PriceCharting page on the
+    /// monitor's right half, reusing the one PriceCharting window, so viewers see it.
+    private func showIfPricey(_ card: CardInfo) async {
+        var sgd = card.prices.map(\.local).max() ?? 0
+        if sgd < Self.priceyFrom {
+            // ClaimDesk had no (or a low) number: ask PriceCharting itself
+            await PriceChartingLookup.shared.fetch(card)
+            let raw = PriceChartingLookup.shared.prices[card.id]?.ungraded ?? ""
+            if let usd = Double(raw.filter { "0123456789.".contains($0) }) { sgd = max(sgd, usd * Self.usdToSGD) }
+        }
+        guard sgd >= Self.priceyFrom, model.card?.id == card.id, let url = card.priceChartingURL else { return }
+        if let w = ws.windows.first(where: { $0.kind == .web && $0.title == "PriceCharting" }) {
+            ws.navigate(w.id, to: url)
+            ws.focus(w.id)
+        } else {
+            let id = ws.open(.web, url: url, title: "PriceCharting")
+            ws.snap(id, to: .right)
+        }
+    }
 
     private var claimDesk: WindowModel? { ws.windows.first(where: LiveCapture.isClaimDesk) }
     private var auctions: [WindowModel] {
@@ -341,6 +365,18 @@ struct LiveCapturePanel: View {
                         Text(model.watching ?? "keeps pictures while the card is shown, files them when the lot number appears")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
+                }
+
+                Toggle(isOn: $showPricey) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("PriceCharting on monitor for cards ≥ S$\(Int(Self.priceyFrom))").font(.callout)
+                        Text("when the card on show is worth that much, its PriceCharting page opens on the right half of the monitor for viewers")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                .onChange(of: model.card?.id) { _ in
+                    guard showPricey, let card = model.card else { return }
+                    Task { await showIfPricey(card) }
                 }
 
                 CrowdControls()
