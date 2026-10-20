@@ -113,17 +113,62 @@ struct CardInfoPanel: View {
     @ObservedObject private var live = LiveCapture.shared
 
     var body: some View {
-        if let card = live.card {
-            HStack(alignment: .top, spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
+            if let card = live.card { details(card) } else { waiting }
+            if live.recent.count > 1 { recentStrip }
+        }
+    }
+
+    /// Nothing named yet: say what fills this space, rather than leave it blank.
+    private var waiting: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "rectangle.portrait.on.rectangle.portrait.angled")
+                .font(.system(size: 40)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Card on show appears here").font(.title3.weight(.semibold))
+                Text(live.auto
+                     ? (live.watching ?? "Watching the auction…")
+                     : "Turn on Auto-capture: the card you hold up is named from the stream, with its set, number, what it evolves from and its price, before the countdown starts.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, minHeight: 140)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    /// The last cards named: tap one to show it again.
+    private var recentStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(live.recent) { c in
+                    Button { live.show(c) } label: {
+                        VStack(spacing: 2) {
+                            picture(c).frame(width: 56, height: 78)
+                                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 5).stroke(c.id == live.card?.id ? Color.accentColor : .clear, lineWidth: 2))
+                            Text(c.nameEN ?? c.name).font(.caption2).lineLimit(1).frame(width: 64)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func details(_ card: CardInfo) -> some View {
+            HStack(alignment: .top, spacing: 16) {
                 picture(card)
-                    .frame(width: 120, height: 168)
+                    .frame(width: 200, height: 280)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text(card.name).font(.title2.weight(.bold)).lineLimit(1)
+                        // English first, big: it's what gets said on stream
+                        Text(card.nameEN ?? card.name).font(.largeTitle.weight(.bold)).lineLimit(1).minimumScaleFactor(0.6)
                         if let en = card.nameEN, en != card.name {
-                            Text(en).font(.title3).foregroundStyle(.secondary).lineLimit(1)
+                            Text(card.name).font(.title3).foregroundStyle(.secondary).lineLimit(1)
                         }
                         Spacer()
                         Button { live.clearCard() } label: { Image(systemName: "xmark.circle.fill") }
@@ -138,7 +183,7 @@ struct CardInfoPanel: View {
 
                     if let from = card.evolvesFrom {
                         Label("Evolves from \(from)", systemImage: "arrow.turn.down.right")
-                            .font(.callout)
+                            .font(.title3.weight(.semibold))
                     }
 
                     // Rarity and art.
@@ -159,7 +204,7 @@ struct CardInfoPanel: View {
                         Image(systemName: "square.stack.3d.up")
                         Text(masterSetLine(card))
                     }
-                    .font(.callout).foregroundStyle(.secondary)
+                    .font(.title3)
                     if !card.versions.isEmpty {
                         Text("Printed as: " + card.versions.map { v in
                             v.price.map { "\(v.label) \($0.formatted(.currency(code: card.currency)))" } ?? v.label
@@ -202,7 +247,6 @@ struct CardInfoPanel: View {
             }
             .padding(12)
             .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
     }
 
     private func masterSetLine(_ card: CardInfo) -> String {
