@@ -47,7 +47,7 @@ final class LiveCapture: ObservableObject {
     private var framesSinceIdentified = 0
     /// Once a card is named, look again only every few frames, to catch the
     /// seller swapping cards without sending every frame to ClaimDesk.
-    private static let recheckEvery = 2
+    private static let recheckEvery = 1
 
     private func identifyWhileShowing(_ jpeg: Data, claimDesk: WindowModel) {
         if identifiedFrame != nil {
@@ -280,21 +280,16 @@ struct LiveCapturePanel: View {
     @ObservedObject private var model = LiveCapture.shared
     @State private var auctionID: UUID?
     @AppStorage("showPriceyOnMonitor") private var showPricey = true
-    static let priceyFrom: Double = 100          // SGD
-    // shortcut: fixed USD->SGD rate for PriceCharting's US$ prices; read a live rate if it drifts far
-    private static let usdToSGD = 1.30
+    static let priceyFrom = CardInfo.priceyFrom
 
     /// The card on show is worth S$100 or more: put its PriceCharting page on the
     /// monitor's right half, reusing the one PriceCharting window, so viewers see it.
     private func showIfPricey(_ card: CardInfo) async {
-        var sgd = card.prices.map(\.local).max() ?? 0
-        if sgd < Self.priceyFrom {
+        if !card.isPricey {
             // ClaimDesk had no (or a low) number: ask PriceCharting itself
             await PriceChartingLookup.shared.fetch(card)
-            let raw = PriceChartingLookup.shared.prices[card.id]?.ungraded ?? ""
-            if let usd = Double(raw.filter { "0123456789.".contains($0) }) { sgd = max(sgd, usd * Self.usdToSGD) }
         }
-        guard sgd >= Self.priceyFrom, model.card?.id == card.id, let url = card.priceChartingURL else { return }
+        guard card.isPricey, model.card?.id == card.id, let url = card.priceChartingURL else { return }
         if let w = ws.windows.first(where: { $0.kind == .web && $0.title == "PriceCharting" }) {
             ws.navigate(w.id, to: url)
             ws.focus(w.id)

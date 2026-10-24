@@ -96,10 +96,26 @@ struct CardInfo: Identifiable {
 }
 
 extension CardInfo {
+    static let priceyFrom: Double = 100          // SGD
+    // shortcut: fixed USD->SGD rate for PriceCharting's US$ prices; read a live rate if it drifts far
+    private static let usdToSGD = 1.30
+
+    /// Worth S$100+, by ClaimDesk's prices or PriceCharting's ungraded price.
+    /// PriceCharting only counts when its page is this card's number: its first
+    /// search hit is often another print of the same card.
+    @MainActor var isPricey: Bool {
+        if (prices.map(\.local).max() ?? 0) >= Self.priceyFrom { return true }
+        guard let p = PriceChartingLookup.shared.prices[id], p.matches(number),
+              let usd = Double((p.ungraded ?? "").filter { "0123456789.".contains($0) }) else { return false }
+        return usd * Self.usdToSGD >= Self.priceyFrom
+    }
+
     /// PriceCharting's search for this card; it lists the graded and ungraded
     /// prices. Opened as a page rather than fetched, because PriceCharting
     /// blocks scripted requests.
     var priceChartingURL: String? {
+        // ClaimDesk's link adds "japanese" for JP cards; without it the English print comes first
+        if let l = links.first(where: { $0.label == "PriceCharting" }) { return l.url }
         let q = [nameEN ?? name, setNameEN ?? setName, number].compactMap { $0 }.joined(separator: " ")
         guard let enc = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return nil }
         return "https://www.pricecharting.com/search-products?type=prices&q=" + enc
@@ -111,6 +127,8 @@ extension CardInfo {
 struct CardInfoPanel: View {
     @EnvironmentObject private var ws: Workspace
     @ObservedObject private var live = LiveCapture.shared
+    /// Observed so the gold border appears once PriceCharting's price arrives.
+    @ObservedObject private var lookup = PriceChartingLookup.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -236,7 +254,7 @@ struct CardInfoPanel: View {
                                     .font(.caption)
                                     .buttonStyle(.borderedProminent)
                             }
-                            ForEach(card.links) { l in
+                            ForEach(card.links.filter { !$0.label.localizedCaseInsensitiveContains("PriceCharting") }) { l in
                                 Button(l.label) { ws.open(.web, url: l.url, title: l.label) }
                                     .font(.caption)
                                     .buttonStyle(.bordered)
@@ -247,6 +265,8 @@ struct CardInfoPanel: View {
             }
             .padding(12)
             .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color(red: 0.95, green: 0.76, blue: 0.20), lineWidth: card.isPricey ? 4 : 0))
     }
 
     private func masterSetLine(_ card: CardInfo) -> String {
@@ -295,6 +315,14 @@ final class PriceChartingLookup: NSObject, ObservableObject {
         let ungraded: String?
         let grade9: String?
         let psa10: String?
+
+        /// The page's title carries the card number ("Pikachu #42"); no number to check, trust it.
+        func matches(_ number: String?) -> Bool {
+            let n = (number ?? "").split(separator: "/").first.map { String($0.drop { $0 == "0" }) } ?? ""
+            guard !n.isEmpty, let title else { return true }
+            return title.range(of: "#0*\(NSRegularExpression.escapedPattern(for: n))\\b",
+                               options: [.regularExpression, .caseInsensitive]) != nil
+        }
     }
 
     static let shared = PriceChartingLookup()
