@@ -426,9 +426,36 @@ private struct InputPanel: View {
                 case .calculator: CalculatorKeypad(id: window.id, expression: window.text)
                 case .pdf:        PDFControls(window: window)
                 case .files:      FilesControls(window: window)
+                case .soundboard: SoundBoardPads(id: window.id)
                 case .dashboard, .clock:
                     Text("This window has no input — it just displays.")
                         .font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+}
+
+private struct SoundBoardPads: View {
+    @EnvironmentObject private var ws: Workspace
+    let id: UUID
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                ForEach(SoundBoard.sounds) { sound in
+                    Button {
+                        SoundBoard.play(sound)
+                        ws.updateText(id, sound.id)
+                    } label: {
+                        Label(sound.id, systemImage: sound.symbol)
+                            .font(.title3.weight(.medium))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 22)
+                            .background(.quaternary.opacity(0.4),
+                                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }

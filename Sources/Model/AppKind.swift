@@ -12,6 +12,7 @@ enum AppKind: String, Codable, CaseIterable, Identifiable {
     case files
     case dashboard
     case clock
+    case soundboard
 
     var id: String { rawValue }
 
@@ -24,6 +25,7 @@ enum AppKind: String, Codable, CaseIterable, Identifiable {
         case .files: return "Files"
         case .dashboard: return "Dashboard"
         case .clock: return "Clock"
+        case .soundboard: return "Sounds"
         }
     }
 
@@ -36,6 +38,7 @@ enum AppKind: String, Codable, CaseIterable, Identifiable {
         case .files: return "folder"
         case .dashboard: return "square.grid.2x2"
         case .clock: return "clock"
+        case .soundboard: return "speaker.wave.3"
         }
     }
 
@@ -48,6 +51,7 @@ enum AppKind: String, Codable, CaseIterable, Identifiable {
         case .files: return Color(red: 0.58, green: 0.80, blue: 0.55)
         case .dashboard: return Color(red: 0.72, green: 0.62, blue: 0.95)
         case .clock: return Color(red: 0.60, green: 0.85, blue: 0.86)
+        case .soundboard: return Color(red: 0.98, green: 0.55, blue: 0.75)
         }
     }
 
@@ -61,6 +65,7 @@ enum AppKind: String, Codable, CaseIterable, Identifiable {
         case .files: return CGSize(width: 0.34, height: 0.50)
         case .dashboard: return CGSize(width: 0.40, height: 0.34)
         case .clock: return CGSize(width: 0.24, height: 0.22)
+        case .soundboard: return CGSize(width: 0.24, height: 0.22)
         }
     }
 
