@@ -440,13 +440,21 @@ private struct InputPanel: View {
 }
 
 private struct SoundBoardPads: View {
+    @AppStorage("soundGain") private var gain = 2.0          // 1 = 100%, up to 5 = 500%
+    @AppStorage("soundDuck") private var duck = true
 
     var body: some View {
         VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary)
+                Slider(value: $gain, in: 1...5, step: 0.25)
+                Text("\(Int(gain * 100))%").font(.callout.monospacedDigit()).frame(width: 52, alignment: .trailing)
+                Toggle("Dip music", isOn: $duck).fixedSize()
+            }
             HStack(spacing: 8) {
                 ForEach(SoundBoard.sounds) { sound in
                     Button {
-                        SoundBoard.play(sound)
+                        SoundBoard.play(sound, gain: gain, duck: duck)
                     } label: {
                         Label(sound.id, systemImage: sound.symbol)
                             .font(.title3.weight(.medium))
