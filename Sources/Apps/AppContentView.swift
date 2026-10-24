@@ -18,7 +18,7 @@ struct AppContentView: View {
         case .files:      FilesBody(window: window)
         case .dashboard:  DashboardBody(scale: scale)
         case .clock:      ClockBody(scale: scale)
-        case .soundboard: SoundBoardBody(last: window.text, scale: scale)
+        case .soundboard: EmptyView()
         }
     }
 }
@@ -278,26 +278,6 @@ struct ClockBody: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .foregroundStyle(.white)
         .onReceive(tick) { now = $0 }
-    }
-}
-
-// MARK: - Sound board
-
-/// Shows the last sound played, so viewers on the monitor see what they heard.
-struct SoundBoardBody: View {
-    let last: String
-    var scale: CGFloat = 1
-
-    var body: some View {
-        let sound = SoundBoard.sounds.first { $0.id == last }
-        VStack(spacing: 6) {
-            Image(systemName: sound?.symbol ?? "speaker.wave.3")
-                .font(.system(size: 40 * scale))
-            Text(sound.map { $0.id + "!" } ?? "Sounds")
-                .font(.system(size: 20 * scale, weight: .semibold, design: .rounded))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .foregroundStyle(sound == nil ? .white.opacity(0.3) : .white)
     }
 }
 
