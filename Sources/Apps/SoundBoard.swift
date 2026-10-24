@@ -1,9 +1,13 @@
 import AVFoundation
 import UIKit
 
-/// Stream sound effects, synthesised at launch like KeepAlive's silence so
-/// there are no binary assets. Plays through the same .mixWithOthers session,
-/// so Spotify keeps playing underneath.
+/// Stream sound effects. Ding is synthesised; the rest are recordings in
+/// Sources/Sounds, trimmed and loudness-matched. Plays through the same
+/// .mixWithOthers session as KeepAlive, so Spotify keeps playing underneath.
+///
+/// Recordings from Wikimedia Commons: applause "277021_sandermotions_applause-2"
+/// (CC0), cheer "Clapping_hurray" (public domain), crickets
+/// "Cricket_Gryllus_bimaculatus_Chirps" (CC BY-SA 4.0).
 enum SoundBoard {
     struct Sound: Identifiable {
         let id: String
@@ -13,9 +17,16 @@ enum SoundBoard {
 
     static let sounds: [Sound] = [
         Sound(id: "Ding", symbol: "bell.fill", wav: wav(bell())),
-        Sound(id: "Clap", symbol: "hands.clap.fill", wav: wav(claps(count: 1, seconds: 0.4))),
-        Sound(id: "Applause", symbol: "hands.sparkles.fill", wav: wav(claps(count: 90, seconds: 3.5))),
-    ]
+        recording("Applause", "hands.clap.fill", "applause"),
+        recording("Cheer", "megaphone.fill", "cheer"),
+        recording("Crickets", "ellipsis.bubble", "crickets"),
+    ].compactMap { $0 }
+
+    private static func recording(_ name: String, _ symbol: String, _ file: String) -> Sound? {
+        guard let url = Bundle.main.url(forResource: file, withExtension: "m4a"),
+              let data = try? Data(contentsOf: url) else { return nil }
+        return Sound(id: name, symbol: symbol, wav: data)
+    }
 
     private static var players: [AVAudioPlayer] = []
     private static let rate = 44_100
@@ -43,27 +54,6 @@ enum SoundBoard {
                 sum + p.amp * exp(-p.decay * t) * sin(2 * .pi * 1320 * p.ratio * t)
             } * 0.45
         }
-    }
-
-    /// Each clap is a ~25 ms burst of high-passed noise; many random claps
-    /// with a swell-and-fade envelope read as applause.
-    private static func claps(count: Int, seconds: Float) -> [Float] {
-        var out = [Float](repeating: 0, count: Int(Float(rate) * seconds))
-        let clapLen = rate / 40
-        for _ in 0..<count {
-            let start = count == 1 ? 0 : Int.random(in: 0..<(out.count - clapLen))
-            let pos = Float(start) / Float(out.count)
-            let swell = count == 1 ? 1 : min(1, pos * 6) * min(1, (1 - pos) * 2.5)
-            let gain = (count == 1 ? 0.9 : 0.35) * swell * Float.random(in: 0.5...1)
-            var prev: Float = 0
-            for i in 0..<clapLen {
-                let noise = Float.random(in: -1...1)
-                let hp = noise - prev   // crude high-pass for the "crack"
-                prev = noise
-                out[start + i] += hp * gain * exp(-Float(i) / Float(clapLen / 5))
-            }
-        }
-        return out
     }
 
     /// 16-bit mono PCM WAV, clipped to [-1, 1].
