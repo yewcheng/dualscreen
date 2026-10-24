@@ -2,8 +2,8 @@ import AVFoundation
 import UIKit
 
 /// Stream sound effects. Ding is synthesised; the rest are recordings in
-/// Sources/Sounds, trimmed and loudness-matched. Plays through the same
-/// .mixWithOthers session as KeepAlive, so Spotify keeps playing underneath.
+/// Sources/Sounds, trimmed and loudness-matched. Mixed over other apps, so
+/// Spotify keeps playing underneath (dipped while an effect plays, if asked).
 ///
 /// All capped at 3 s. Recordings from Wikimedia Commons: applause
 /// "277021_sandermotions_applause-2" (CC0); cheer mixes that applause with
@@ -14,11 +14,11 @@ enum SoundBoard {
     struct Sound: Identifiable {
         let id: String
         let symbol: String
-        let wav: Data
+        let url: URL
     }
 
     static let sounds: [Sound] = [
-        Sound(id: "Ding", symbol: "bell.fill", wav: wav(bell())),
+        dingFile().map { Sound(id: "Ding", symbol: "bell.fill", url: $0) },
         recording("Applause", "hands.clap.fill", "applause"),
         recording("Cheer", "megaphone.fill", "cheer"),
         recording("Crickets", "ellipsis.bubble", "crickets"),
@@ -26,22 +26,70 @@ enum SoundBoard {
     ].compactMap { $0 }
 
     private static func recording(_ name: String, _ symbol: String, _ file: String) -> Sound? {
-        guard let url = Bundle.main.url(forResource: file, withExtension: "m4a"),
-              let data = try? Data(contentsOf: url) else { return nil }
-        return Sound(id: name, symbol: symbol, wav: data)
+        Bundle.main.url(forResource: file, withExtension: "m4a").map { Sound(id: name, symbol: symbol, url: $0) }
     }
 
-    private static var players: [AVAudioPlayer] = []
+    /// AVAudioFile reads files, so the synthesised ding is written to Caches once.
+    private static func dingFile() -> URL? {
+        let url = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("ding.wav")
+        return (try? wav(bell()).write(to: url)) == nil ? nil : url
+    }
+
+    // MARK: Playback
+
+    /// players -> bus -> boost (EQ global gain) -> peak limiter -> output.
+    /// AVAudioPlayer stops at 100%; the EQ goes past it and the limiter keeps
+    /// a 500% boost from clipping into crackle.
+    private static let engine = AVAudioEngine()
+    private static let bus = AVAudioMixerNode()
+    private static let boost = AVAudioUnitEQ(numberOfBands: 0)
+    private static let limiter = AVAudioUnitEffect(audioComponentDescription: AudioComponentDescription(
+        componentType: kAudioUnitType_Effect, componentSubType: kAudioUnitSubType_PeakLimiter,
+        componentManufacturer: kAudioUnitManufacturer_Apple, componentFlags: 0, componentFlagsMask: 0))
+    private static var wired = false
+    private static var ducking = 0
     private static let rate = 44_100
 
-    static func play(_ sound: Sound) {
+    /// `gain` 1...5 is 100%...500%. `duck` lowers other apps' audio (Spotify)
+    /// while the effect plays.
+    static func play(_ sound: Sound, gain: Double, duck: Bool) {
+        guard let file = try? AVAudioFile(forReading: sound.url) else { return }
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+        if duck {
+            ducking += 1
+            try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers, .duckOthers])
+        } else if ducking == 0 {
+            try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+        }
         try? session.setActive(true)
-        players.removeAll { !$0.isPlaying }
-        guard let player = try? AVAudioPlayer(data: sound.wav) else { return }
-        player.play()
-        players.append(player)   // retained until finished, so taps can overlap
+
+        if !wired {
+            [bus, boost, limiter].forEach(engine.attach)
+            engine.connect(bus, to: boost, format: nil)
+            engine.connect(boost, to: limiter, format: nil)
+            engine.connect(limiter, to: engine.mainMixerNode, format: nil)
+            wired = true
+        }
+        boost.globalGain = Float(20 * log10(max(1, min(5, gain))))   // 500% = +14 dB
+        if !engine.isRunning { try? engine.start() }
+
+        let node = AVAudioPlayerNode()
+        engine.attach(node)
+        engine.connect(node, to: bus, format: file.processingFormat)
+        node.scheduleFile(file, at: nil, completionCallbackType: .dataPlayedBack) { _ in
+            DispatchQueue.main.async {
+                engine.detach(node)
+                guard duck else { return }
+                ducking -= 1
+                // back to plain mixing so KeepAlive's silent loop doesn't hold Spotify down
+                if ducking == 0 {
+                    try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+                    try? session.setActive(true)
+                }
+            }
+        }
+        node.play()
     }
 
     // MARK: Synthesis
