@@ -5,9 +5,11 @@ import UIKit
 /// Sources/Sounds, trimmed and loudness-matched. Plays through the same
 /// .mixWithOthers session as KeepAlive, so Spotify keeps playing underneath.
 ///
-/// Recordings from Wikimedia Commons: applause "277021_sandermotions_applause-2"
-/// (CC0), cheer "Clapping_hurray" (public domain), crickets
-/// "Cricket_Gryllus_bimaculatus_Chirps" (CC BY-SA 4.0).
+/// All capped at 3 s. Recordings from Wikimedia Commons: applause
+/// "277021_sandermotions_applause-2" (CC0); cheer mixes that applause with
+/// "LL-Q1860_(eng)-Vealhurl-woohoo" (CC BY-SA 4.0) and a synthesised wolf
+/// whistle; crickets "Cricket_Gryllus_bimaculatus_Chirps" (CC BY-SA 4.0); crow
+/// "Corvus_brachyrhynchos_-_American_Crow_-_XC80525" (CC BY-SA 3.0).
 enum SoundBoard {
     struct Sound: Identifiable {
         let id: String
@@ -20,6 +22,7 @@ enum SoundBoard {
         recording("Applause", "hands.clap.fill", "applause"),
         recording("Cheer", "megaphone.fill", "cheer"),
         recording("Crickets", "ellipsis.bubble", "crickets"),
+        recording("Crow", "bird.fill", "crow"),
     ].compactMap { $0 }
 
     private static func recording(_ name: String, _ symbol: String, _ file: String) -> Sound? {
