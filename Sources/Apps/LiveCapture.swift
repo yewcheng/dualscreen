@@ -316,17 +316,18 @@ struct LiveCapturePanel: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
 
-                HStack(spacing: 8) {
-                    if auctions.count > 1 {
-                        Picker("Auction", selection: Binding(get: { auction.id },
-                                                             set: { auctionID = $0 })) {
-                            ForEach(auctions) { Text($0.title).lineLimit(1).tag($0.id) }
-                        }
-                        .pickerStyle(.menu)
-                    } else {
-                        Label(auction.title, systemImage: "globe")
-                            .font(.footnote).lineLimit(1)
+                if auctions.count > 1 {
+                    Picker("Auction", selection: Binding(get: { auction.id },
+                                                         set: { auctionID = $0 })) {
+                        ForEach(auctions) { Text($0.title).lineLimit(1).tag($0.id) }
                     }
+                    .pickerStyle(.menu)
+                    .lineLimit(1)
+                } else {
+                    Label(auction.title, systemImage: "globe")
+                        .font(.footnote).lineLimit(1)
+                }
+                HStack(spacing: 8) {
                     Button { ws.focus(auction.id) } label: { Label("Front", systemImage: "rectangle.stack.badge.play").lineLimit(1) }
                         .buttonStyle(.bordered).fixedSize()
                     Spacer()
@@ -357,16 +358,16 @@ struct LiveCapturePanel: View {
                     })) {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Auto-capture each new lot").font(.callout)
-                        Text(model.watching ?? "keeps pictures while the card is shown, files them when the lot number appears")
-                            .font(.caption2).foregroundStyle(.secondary)
+                        Text(model.watching ?? "files each lot when its number appears")
+                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
 
                 Toggle(isOn: $showPricey) {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("PriceCharting on monitor for cards ≥ S$\(Int(Self.priceyFrom))").font(.callout)
-                        Text("when the card on show is worth that much, its PriceCharting page opens on the right half of the monitor for viewers")
-                            .font(.caption2).foregroundStyle(.secondary)
+                        Text("PriceCharting for ≥ S$\(Int(Self.priceyFrom))").font(.callout).lineLimit(1)
+                        Text("opens on the monitor's right half")
+                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
                 .onChange(of: model.card?.id) { _ in

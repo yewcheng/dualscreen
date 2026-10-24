@@ -21,6 +21,7 @@ struct ControllerView: View {
                             ScrollView {
                                 VStack(spacing: 12) {
                                     CardInfoPanel()
+                                    SoundBoardPads()
                                     InputPanel()
                                 }
                             }
@@ -67,7 +68,7 @@ struct ControllerView: View {
         ScrollView {
             VStack(spacing: 14) {
                 DisplayBanner()
-                if includingInput { CardInfoPanel() }
+                if includingInput { CardInfoPanel(); SoundBoardPads() }
                 LiveCapturePanel()
                 Launcher()
                 SnapBar()
@@ -91,13 +92,15 @@ private struct DisplayBanner: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(ws.isExternalAttached ? "External display connected" : "No external display")
                     .font(.subheadline.weight(.semibold))
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if ws.isExternalAttached {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
         }
-        .padding(14)
+        .padding(10)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
@@ -131,7 +134,7 @@ private struct Launcher: View {
               url: "https://timetocook.tail947b31.ts.net/"),
          Item(title: "Carousell", symbol: "cart", kind: .web,
               url: "https://www.carousell.sg/")]
-        + AppKind.allCases.filter { $0 != .web }.map {
+        + [AppKind.dashboard].map {
             Item(title: $0.title, symbol: $0.symbol, kind: $0)
         }
     }
@@ -426,7 +429,7 @@ private struct InputPanel: View {
                 case .calculator: CalculatorKeypad(id: window.id, expression: window.text)
                 case .pdf:        PDFControls(window: window)
                 case .files:      FilesControls(window: window)
-                case .soundboard: SoundBoardPads(id: window.id)
+                case .soundboard: EmptyView()
                 case .dashboard, .clock:
                     Text("This window has no input — it just displays.")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -437,8 +440,6 @@ private struct InputPanel: View {
 }
 
 private struct SoundBoardPads: View {
-    @EnvironmentObject private var ws: Workspace
-    let id: UUID
 
     var body: some View {
         VStack(spacing: 8) {
@@ -446,12 +447,11 @@ private struct SoundBoardPads: View {
                 ForEach(SoundBoard.sounds) { sound in
                     Button {
                         SoundBoard.play(sound)
-                        ws.updateText(id, sound.id)
                     } label: {
                         Label(sound.id, systemImage: sound.symbol)
                             .font(.title3.weight(.medium))
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 22)
+                            .padding(.vertical, 14)
                             .background(.quaternary.opacity(0.4),
                                         in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }

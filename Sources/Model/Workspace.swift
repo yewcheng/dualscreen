@@ -275,7 +275,7 @@ final class Workspace: ObservableObject {
     func load() {
         guard let data = try? Data(contentsOf: storeURL),
               let saved = try? JSONDecoder().decode(Saved.self, from: data) else { return }
-        windows = saved.windows
+        windows = saved.windows.filter { $0.kind != .soundboard }   // sounds moved off the monitor
         wallpaper = saved.wallpaper
         focusedID = windows.max(by: { $0.z < $1.z })?.id
     }

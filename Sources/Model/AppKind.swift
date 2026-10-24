@@ -12,6 +12,7 @@ enum AppKind: String, Codable, CaseIterable, Identifiable {
     case files
     case dashboard
     case clock
+    /// Retired: the sound pads live on the iPad now. Kept so saved layouts still decode.
     case soundboard
 
     var id: String { rawValue }
