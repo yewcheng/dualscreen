@@ -6,9 +6,7 @@ import UIKit
 /// Spotify keeps playing underneath (dipped while an effect plays, if asked).
 ///
 /// All capped at 3 s. Recordings from Wikimedia Commons: applause
-/// "277021_sandermotions_applause-2" (CC0); cheer mixes that applause with
-/// "LL-Q1860_(eng)-Vealhurl-woohoo" (CC BY-SA 4.0) and a synthesised wolf
-/// whistle; crickets "Cricket_Gryllus_bimaculatus_Chirps" (CC BY-SA 4.0); crow
+/// "277021_sandermotions_applause-2" (CC0); crickets "Cricket_Gryllus_bimaculatus_Chirps" (CC BY-SA 4.0); crow
 /// "Corvus_brachyrhynchos_-_American_Crow_-_XC80525" (CC BY-SA 3.0).
 enum SoundBoard {
     struct Sound: Identifiable {
@@ -20,7 +18,6 @@ enum SoundBoard {
     static let sounds: [Sound] = [
         dingFile().map { Sound(id: "Ding", symbol: "bell.fill", url: $0) },
         recording("Applause", "hands.clap.fill", "applause"),
-        recording("Cheer", "megaphone.fill", "cheer"),
         recording("Crickets", "ellipsis.bubble", "crickets"),
         recording("Crow", "bird.fill", "crow"),
     ].compactMap { $0 }

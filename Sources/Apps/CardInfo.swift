@@ -151,8 +151,8 @@ struct CardInfoPanel: View {
             }
             Spacer()
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, minHeight: 140)
+        .padding(10)
+        .frame(maxWidth: .infinity, minHeight: 80)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
@@ -178,7 +178,7 @@ struct CardInfoPanel: View {
     private func details(_ card: CardInfo) -> some View {
             HStack(alignment: .top, spacing: 16) {
                 picture(card)
-                    .frame(width: 200, height: 280)
+                    .frame(width: 150, height: 210)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 6) {

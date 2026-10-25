@@ -400,7 +400,7 @@ struct LiveCapturePanel: View {
                     }
                 }
             }
-            .padding(12)
+            .padding(10)
             .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
     }

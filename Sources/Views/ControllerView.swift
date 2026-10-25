@@ -12,14 +12,14 @@ struct ControllerView: View {
             // inside the ScrollView — a scroll view would eat the drags.
             GeometryReader { geo in
                 if geo.size.width > geo.size.height {
-                    HStack(alignment: .top, spacing: 18) {
+                    HStack(alignment: .top, spacing: 12) {
                         // The focused window's input (address bar, typing,
                         // keypad) goes under the view, in the space that was
                         // empty, so the right column is short enough to see.
-                        VStack(spacing: 12) {
+                        VStack(spacing: 8) {
                             WorkspacePreview()
                             ScrollView {
-                                VStack(spacing: 12) {
+                                VStack(spacing: 8) {
                                     CardInfoPanel()
                                     SoundBoardPads()
                                     InputPanel()
@@ -29,13 +29,13 @@ struct ControllerView: View {
                         .frame(width: geo.size.width * 0.70)
                         controls(includingInput: false)
                     }
-                    .padding(18)
+                    .padding(10)
                 } else {
-                    VStack(spacing: 14) {
+                    VStack(spacing: 10) {
                         WorkspacePreview()
                         controls(includingInput: true)
                     }
-                    .padding(18)
+                    .padding(10)
                 }
             }
             .navigationTitle("DualScreen \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
@@ -66,7 +66,7 @@ struct ControllerView: View {
 
     private func controls(includingInput: Bool) -> some View {
         ScrollView {
-            VStack(spacing: 14) {
+            VStack(spacing: 10) {
                 DisplayBanner()
                 if includingInput { CardInfoPanel(); SoundBoardPads() }
                 LiveCapturePanel()
@@ -148,9 +148,9 @@ private struct Launcher: View {
                         ws.open(item.kind, url: item.url,
                                 title: item.url == nil ? nil : item.title)
                     } label: {
-                        VStack(spacing: 6) {
-                            Image(systemName: item.symbol).font(.title3)
-                            Text(item.title).font(.caption)
+                        HStack(spacing: 6) {
+                            Image(systemName: item.symbol)
+                            Text(item.title).font(.caption).lineLimit(1)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
@@ -361,9 +361,9 @@ private struct SnapBar: View {
             if let id = ws.focusedID { ws.snap(id, to: target) }
         } label: {
             Image(systemName: symbol)
-                .font(.title3)
+                .font(.body)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
+                .padding(.vertical, 6)
                 .background(.quaternary.opacity(0.4),
                             in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
@@ -404,7 +404,7 @@ private struct WindowList: View {
                 }
                 .buttonStyle(.borderless)
                 .font(.callout)
-                .padding(.horizontal, 12).padding(.vertical, 10)
+                .padding(.horizontal, 10).padding(.vertical, 6)
                 .background(w.id == ws.focusedID ? w.kind.accent.opacity(0.18) : Color.primary.opacity(0.05),
                             in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .contentShape(Rectangle())
@@ -457,9 +457,9 @@ private struct SoundBoardPads: View {
                         SoundBoard.play(sound, gain: gain, duck: duck)
                     } label: {
                         Label(sound.id, systemImage: sound.symbol)
-                            .font(.title3.weight(.medium))
+                            .font(.headline)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .padding(.vertical, 9)
                             .background(.quaternary.opacity(0.4),
                                         in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
